@@ -44,7 +44,7 @@ ci/
 .idea
 
 .eslintcache
-
+.github
 .DS_Store
 *.suo
 *.ntvs*
