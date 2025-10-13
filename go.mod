@@ -2,7 +2,10 @@ module github.com/sre/assistant
 
 go 1.24.6
 
-require github.com/grafana/grafana-plugin-sdk-go v0.280.0
+require (
+	github.com/go-chi/chi/v5 v5.2.3
+	github.com/grafana/grafana-plugin-sdk-go v0.280.0
+)
 
 require (
 	github.com/BurntSushi/toml v1.5.0 // indirect

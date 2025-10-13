@@ -2,14 +2,12 @@ import pluginJson from './plugin.json';
 
 export const PLUGIN_BASE_URL = `/a/${pluginJson.id}`;
 
+/**
+ * @section 3 資料流總覽
+ * 定義 App 內部使用的主要路徑，對應 Overview/Insight/Incident 三大頁面。
+ */
 export enum ROUTES {
-  Home = 'home',
-  WithTabs = 'page-with-tabs',
-  WithDrilldown = 'page-with-drilldown',
-  HelloWorld = 'hello-world',
+  Overview = 'overview',
+  Insight = 'insight',
+  Incident = 'incident',
 }
-
-export const DATASOURCE_REF = {
-  uid: 'gdev-testdata',
-  type: 'testdata',
-};
