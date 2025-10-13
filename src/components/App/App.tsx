@@ -1,51 +1,40 @@
-import React from 'react';
-import { SceneApp, useSceneApp } from '@grafana/scenes';
+import React, { useMemo } from 'react';
 import { AppRootProps } from '@grafana/data';
-import { config } from '@grafana/runtime';
-import { Alert } from '@grafana/ui';
-import { DATASOURCE_REF } from '../../constants';
-import { PluginPropsContext } from '../../utils/utils.plugin';
-import { helloWorldPage } from '../../pages/HelloWorld/helloWorldPage';
-import { homePage } from '../../pages/Home/homePage';
-import { withDrilldownPage } from '../../pages/WithDrilldown/withDrilldownPage';
-import { withTabsPage } from '../../pages/WithTabs/withTabsPage';
+import OverviewPage from '../../pages/OverviewPage';
+import InsightPage from '../../pages/InsightPage';
+import IncidentPage from '../../pages/IncidentPage';
+import { AppSection } from '../../pages/PageLayout';
 
-function getSceneApp() {
-  return new SceneApp({
-    pages: [helloWorldPage, homePage, withDrilldownPage, withTabsPage],
-    urlSyncOptions: {
-      updateUrlOnInit: true,
-      createBrowserHistorySteps: true,
-    },
-  });
-}
+const resolveSection = (path?: string): AppSection => {
+  if (!path) {
+    return 'overview';
+  }
 
-function AppWithScenes() {
-  const scene = useSceneApp(getSceneApp);
+  const normalized = path.replace(/^\//, '');
+  if (normalized.startsWith('insight')) {
+    return 'insight';
+  }
+  if (normalized.startsWith('incident')) {
+    return 'incident';
+  }
+  return 'overview';
+};
 
-  return (
-    <>
-      {!config.datasources[DATASOURCE_REF.uid] && (
-        <Alert title={`Missing ${DATASOURCE_REF.uid} datasource`}>
-          These demos depend on <b>testdata</b> datasource: <code>{JSON.stringify(DATASOURCE_REF)}</code>. See{' '}
-          <a href="https://github.com/grafana/grafana/tree/main/devenv#set-up-your-development-environment">
-            https://github.com/grafana/grafana/tree/main/devenv#set-up-your-development-environment
-          </a>{' '}
-          for more details.
-        </Alert>
-      )}
+/**
+ * @description 對應 architecture.md 第 4.2 節，根據路徑動態載入 Overview/Insight/Incident 頁面。
+ */
+const App: React.FC<AppRootProps> = (props) => {
+  const section = useMemo(() => resolveSection(props.path), [props.path]);
 
-      <scene.Component model={scene} />
-    </>
-  );
-}
+  if (section === 'insight') {
+    return <InsightPage activeSection="insight" />;
+  }
 
-function App(props: AppRootProps) {
-  return (
-    <PluginPropsContext.Provider value={props}>
-      <AppWithScenes />
-    </PluginPropsContext.Provider>
-  );
-}
+  if (section === 'incident') {
+    return <IncidentPage activeSection="incident" />;
+  }
+
+  return <OverviewPage pluginProps={props} activeSection="overview" />;
+};
 
 export default App;

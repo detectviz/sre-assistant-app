@@ -22,29 +22,22 @@
   "includes": [
     {
       "type": "page",
-      "name": "Home",
-      "path": "/a/%PLUGIN_ID%/home",
+      "name": "Overview",
+      "path": "/a/%PLUGIN_ID%/overview",
       "addToNav": true,
       "defaultNav": true
     },
     {
       "type": "page",
-      "name": "Page with tabs",
-      "path": "/a/%PLUGIN_ID%/page-with-tabs",
+      "name": "Insights",
+      "path": "/a/%PLUGIN_ID%/insight",
       "addToNav": true,
       "defaultNav": false
     },
     {
       "type": "page",
-      "name": "Page with drilldown",
-      "path": "/a/%PLUGIN_ID%/page-with-drilldown",
-      "addToNav": true,
-      "defaultNav": false
-    },
-    {
-      "type": "page",
-      "name": "Hello world",
-      "path": "/a/%PLUGIN_ID%/hello-world",
+      "name": "Incidents",
+      "path": "/a/%PLUGIN_ID%/incident",
       "addToNav": true,
       "defaultNav": false
     }
