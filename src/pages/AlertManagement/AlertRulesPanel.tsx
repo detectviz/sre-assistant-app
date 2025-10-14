@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
-import { Badge, Button, Spinner, Alert, type BadgeColor } from '@grafana/ui';
+import { Badge, Button, Spinner, Alert, type BadgeColor, useStyles2 } from '@grafana/ui';
+import { GrafanaTheme2 } from '@grafana/data';
 import { css } from '@emotion/css';
 import { SceneObjectBase, type SceneComponentProps, type SceneObjectState } from '@grafana/scenes';
 import { mcp } from '@grafana/llm';
@@ -11,24 +12,27 @@ interface RawAlertRule {
   title?: string;
   name?: string;
   state?: string;
-  folderTitle?: string;
   folderUID?: string;
   ruleGroup?: string;
   updated?: string;
+  lastEvaluation?: string;
   health?: string;
   labels?: Record<string, string>;
+  annotations?: Record<string, string>;
   for?: string;
 }
 
 interface AlertRuleSummary {
-  id: string;
+  uid: string;
   title: string;
   state: string;
   health: string;
-  location: string;
-  durationText: string;
-  updatedText: string;
+  folderUID: string;
+  ruleGroup: string;
+  for: string;
+  lastEvaluation: string;
   labels: Record<string, string>;
+  annotations: Record<string, string>;
 }
 
 interface AlertRulesPanelState extends SceneObjectState {
@@ -38,39 +42,6 @@ interface AlertRulesPanelState extends SceneObjectState {
   connectionMessage?: string;
   connectionSeverity?: 'info' | 'success' | 'warning' | 'error';
 }
-
-const tableStyles = css`
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 12px;
-
-  thead {
-    background: var(--input-bg, #f5f6f9);
-  }
-
-  th,
-  td {
-    padding: 8px 12px;
-    text-align: left;
-    border-bottom: 1px solid var(--border-weak, #d8d9dd);
-  }
-`;
-
-const labelListStyles = css`
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-`;
-
-const labelPillStyles = css`
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--background-secondary, #f2f3f5);
-  font-family: var(--font-family-monospace);
-  font-size: 12px;
-`;
 
 export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
   static Component = AlertRulesPanelRenderer;
@@ -174,21 +145,19 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
     try {
       const list = await fetchAlertRules(this.mcpClient);
       const normalized = list.map((item, index) => {
-        const id = item.uid ?? String(item.id ?? item.title ?? index);
-        const updated =
-          item.updated && !Number.isNaN(Date.parse(item.updated)) ? new Date(item.updated) : undefined;
-        const location = item.folderTitle ?? item.ruleGroup ?? item.folderUID ?? '未分類';
-        const durationText = item.for && item.for.trim() !== '' ? item.for : '未設定';
+        const uid = item.uid ?? String(item.id ?? item.title ?? index);
 
         return {
-          id,
+          uid,
           title: item.title ?? item.name ?? '未命名規則',
           state: item.state ?? 'unknown',
           health: item.health ?? 'unknown',
-          location,
-          durationText,
-          updatedText: updated ? updated.toLocaleString() : '無評估時間',
+          folderUID: item.folderUID ?? '未指定',
+          ruleGroup: item.ruleGroup ?? '未指定',
+          for: formatDuration(item.for),
+          lastEvaluation: formatLastEvaluation(item.lastEvaluation ?? item.updated),
           labels: item.labels ?? {},
+          annotations: item.annotations ?? {},
         } satisfies AlertRuleSummary;
       });
 
@@ -239,6 +208,7 @@ function extractErrorMessage(error: unknown): string {
 function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>) {
   const state = model.useState();
   const { client, enabled, error: mcpError } = mcp.useMCPClient();
+  const styles = useStyles2(getStyles);
 
   useEffect(() => {
     model.setMCPContext({ client, enabled, error: mcpError ?? undefined });
@@ -274,21 +244,23 @@ function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>
         </Alert>
       )}
       {state.rules.length > 0 && (
-        <table className={tableStyles}>
+        <table className={styles.table}>
           <thead>
             <tr>
               <th>名稱</th>
               <th>狀態</th>
               <th>健康度</th>
-              <th>資料夾 / 群組</th>
-              <th>持續時間</th>
-              <th>最近評估</th>
-              <th>主要標籤</th>
+              <th>資料夾 UID</th>
+              <th>規則組</th>
+              <th>持續條件</th>
+              <th>最後評估時間</th>
+              <th>標籤</th>
+              <th>註解</th>
             </tr>
           </thead>
           <tbody>
             {state.rules.map((rule) => (
-              <tr key={rule.id}>
+              <tr key={rule.uid}>
                 <td>{rule.title}</td>
                 <td>
                   <Badge text={rule.state.toUpperCase()} color={stateBadgeColor(rule.state)} />
@@ -296,11 +268,25 @@ function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>
                 <td>
                   <Badge text={rule.health.toUpperCase()} color={healthBadgeColor(rule.health)} />
                 </td>
-                <td>{rule.location}</td>
-                <td>{rule.durationText}</td>
-                <td>{rule.updatedText}</td>
+                <td>{rule.folderUID}</td>
+                <td>{rule.ruleGroup}</td>
+                <td>{rule.for}</td>
+                <td>{rule.lastEvaluation}</td>
                 <td>
-                  <LabelList labels={rule.labels} />
+                  <KeyValueList
+                    values={rule.labels}
+                    emptyText="無"
+                    className={styles.keyValueList}
+                    itemClassName={styles.keyValuePill}
+                  />
+                </td>
+                <td>
+                  <KeyValueList
+                    values={rule.annotations}
+                    emptyText="無"
+                    className={styles.keyValueList}
+                    itemClassName={styles.keyValuePill}
+                  />
                 </td>
               </tr>
             ))}
@@ -343,17 +329,27 @@ function healthBadgeColor(health: string): BadgeColor {
   }
 }
 
-function LabelList({ labels }: { labels: Record<string, string> }) {
-  const entries = Object.entries(labels);
+function KeyValueList({
+  values,
+  emptyText,
+  className,
+  itemClassName,
+}: {
+  values: Record<string, string>;
+  emptyText: string;
+  className: string;
+  itemClassName: string;
+}) {
+  const entries = Object.entries(values);
 
   if (entries.length === 0) {
-    return <span>無</span>;
+    return <span>{emptyText}</span>;
   }
 
   return (
-    <div className={labelListStyles}>
+    <div className={className}>
       {entries.map(([key, value]) => (
-        <span key={`${key}:${value}`} className={labelPillStyles}>
+        <span key={`${key}:${value}`} className={itemClassName}>
           {`${key}=${value}`}
         </span>
       ))}
@@ -426,6 +422,7 @@ function normalizeMCPAlertRule(value: unknown): RawAlertRule {
     for?: string;
     lastEvaluation?: string;
     labels?: Record<string, string>;
+    annotations?: Record<string, string>;
   };
 
   return {
@@ -433,11 +430,86 @@ function normalizeMCPAlertRule(value: unknown): RawAlertRule {
     title: candidate.title,
     state: candidate.state,
     health: candidate.health,
-    folderTitle: candidate.folderUID,
     folderUID: candidate.folderUID,
     ruleGroup: candidate.ruleGroup,
     updated: candidate.lastEvaluation,
     labels: candidate.labels,
+    annotations: candidate.annotations,
     for: candidate.for,
   };
 }
+
+function formatDuration(value?: string): string {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return '未設定';
+  }
+
+  return trimmed;
+}
+
+function formatLastEvaluation(value?: string): string {
+  if (!value) {
+    return '無評估時間';
+  }
+
+  const parsed = Date.parse(value);
+
+  if (Number.isNaN(parsed)) {
+    return value;
+  }
+
+  return new Date(parsed).toLocaleString();
+}
+
+const getStyles = (theme: GrafanaTheme2) => ({
+  table: css`
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: ${theme.spacing(2)};
+    border: 1px solid ${theme.colors.border.weak};
+
+    thead {
+      background: ${theme.colors.background.secondary};
+    }
+
+    th {
+      font-weight: ${theme.typography.fontWeightMedium};
+      color: ${theme.colors.text.secondary};
+      text-transform: uppercase;
+      font-size: ${theme.typography.bodySmall.fontSize};
+      letter-spacing: 0.02em;
+    }
+
+    th,
+    td {
+      padding: ${theme.spacing(1)};
+      border-bottom: 1px solid ${theme.colors.border.weak};
+      text-align: left;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: ${theme.colors.background.secondary};
+    }
+  `,
+  keyValueList: css`
+    display: flex;
+    flex-wrap: wrap;
+    gap: ${theme.spacing(1)};
+  `,
+  keyValuePill: css`
+    display: inline-flex;
+    align-items: center;
+    padding: ${theme.spacing(0.5)} ${theme.spacing(1)};
+    border-radius: 4px;
+    background: ${theme.colors.background.canvas};
+    border: 1px solid ${theme.colors.border.weak};
+    font-family: ${theme.typography.fontFamilyMonospace};
+    font-size: ${theme.typography.bodySmall.fontSize};
+  `,
+});
