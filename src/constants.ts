@@ -7,9 +7,22 @@ export enum ROUTES {
   WithTabs = 'page-with-tabs',
   WithDrilldown = 'page-with-drilldown',
   HelloWorld = 'hello-world',
+  RealTimeMetrics = 'real-time-metrics',
+  LogAnalysis = 'log-analysis',
+  AlertManagement = 'alert-management',
 }
 
 export const DATASOURCE_REF = {
   uid: 'gdev-testdata',
   type: 'testdata',
+};
+
+export const PROMETHEUS_DATASOURCE_REF = {
+  uid: 'gdev-prometheus',
+  type: 'prometheus',
+};
+
+export const LOKI_DATASOURCE_REF = {
+  uid: 'gdev-loki',
+  type: 'loki',
 };

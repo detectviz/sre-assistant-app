@@ -29,6 +29,27 @@
     },
     {
       "type": "page",
+      "name": "即時指標查詢",
+      "path": "/a/%PLUGIN_ID%/real-time-metrics",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
+      "name": "日誌分析",
+      "path": "/a/%PLUGIN_ID%/log-analysis",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
+      "name": "告警管理",
+      "path": "/a/%PLUGIN_ID%/alert-management",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
       "name": "Page with tabs",
       "path": "/a/%PLUGIN_ID%/page-with-tabs",
       "addToNav": true,

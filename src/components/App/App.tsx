@@ -7,12 +7,23 @@ import { DATASOURCE_REF } from '../../constants';
 import { PluginPropsContext } from '../../utils/utils.plugin';
 import { helloWorldPage } from '../../pages/HelloWorld/helloWorldPage';
 import { homePage } from '../../pages/Home/homePage';
+import { realTimeMetricsPage } from '../../pages/RealTimeMetrics/realTimeMetricsPage';
+import { logAnalysisPage } from '../../pages/LogAnalysis/logAnalysisPage';
+import { alertManagementPage } from '../../pages/AlertManagement/alertManagementPage';
 import { withDrilldownPage } from '../../pages/WithDrilldown/withDrilldownPage';
 import { withTabsPage } from '../../pages/WithTabs/withTabsPage';
 
 function getSceneApp() {
   return new SceneApp({
-    pages: [helloWorldPage, homePage, withDrilldownPage, withTabsPage],
+    pages: [
+      homePage,
+      realTimeMetricsPage,
+      logAnalysisPage,
+      alertManagementPage,
+      withDrilldownPage,
+      withTabsPage,
+      helloWorldPage,
+    ],
     urlSyncOptions: {
       updateUrlOnInit: true,
       createBrowserHistorySteps: true,
