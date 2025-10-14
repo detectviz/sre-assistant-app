@@ -10,13 +10,21 @@ const resolveSection = (path?: string): AppSection => {
     return 'overview';
   }
 
-  const normalized = path.replace(/^\//, '');
-  if (normalized.startsWith('insight')) {
+  const normalized = path.replace(/^\/+|\/+$/g, '').toLowerCase();
+  if (!normalized) {
+    return 'overview';
+  }
+
+  const [segment] = normalized.split('/');
+
+  if (segment === 'insight' || segment === 'insights') {
     return 'insight';
   }
-  if (normalized.startsWith('incident')) {
+
+  if (segment === 'incident' || segment === 'incidents') {
     return 'incident';
   }
+
   return 'overview';
 };
 

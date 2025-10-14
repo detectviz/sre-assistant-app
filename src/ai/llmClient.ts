@@ -28,7 +28,9 @@ export class LLMClient {
       model: llm.Model.BASE,
       messages,
     });
-    return response.choices[0]?.message?.content?.trim() ?? 'AI 無回應';
+    const choices = response.choices ?? [];
+    const firstMessage = choices[0]?.message?.content?.trim();
+    return firstMessage && firstMessage.length > 0 ? firstMessage : 'AI 無回應';
   }
 
   async summarizeInsight(result: InsightAnalyzeResponse, requestSummary: string): Promise<string> {
