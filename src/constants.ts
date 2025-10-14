@@ -17,12 +17,3 @@ export const DATASOURCE_REF = {
   type: 'testdata',
 };
 
-export const PROMETHEUS_DATASOURCE_REF = {
-  uid: 'gdev-prometheus',
-  type: 'prometheus',
-};
-
-export const LOKI_DATASOURCE_REF = {
-  uid: 'gdev-loki',
-  type: 'loki',
-};
