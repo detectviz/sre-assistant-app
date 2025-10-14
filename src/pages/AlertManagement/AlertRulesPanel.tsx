@@ -1,10 +1,8 @@
 import React, { useEffect } from 'react';
 import { getBackendSrv } from '@grafana/runtime';
-import { Badge, Button, Spinner, Alert } from '@grafana/ui';
-import type { BadgeColor } from '@grafana/ui';
+import { Badge, Button, Spinner, Alert, type BadgeColor } from '@grafana/ui';
 import { css } from '@emotion/css';
-import type { SceneComponentProps, SceneObjectState } from '@grafana/scenes';
-import { SceneObjectBase } from '@grafana/scenes';
+import { SceneObjectBase, type SceneComponentProps, type SceneObjectState } from '@grafana/scenes';
 
 interface RawAlertRule {
   id?: number;
@@ -30,6 +28,45 @@ interface AlertRulesPanelState extends SceneObjectState {
   error?: string;
   rules: AlertRuleSummary[];
 }
+
+interface AlertRuleEndpoint {
+  url: string;
+  unwrap?: (response: unknown) => unknown;
+}
+
+const ALERT_RULE_ENDPOINTS: AlertRuleEndpoint[] = [
+  {
+    url: '/api/ruler/grafana/api/v1/rules',
+  },
+  {
+    url: '/api/alertmanager/grafana/config/api/v1/rules',
+    unwrap: (response: unknown) => {
+      if (!response || typeof response !== 'object') {
+        return response;
+      }
+
+      const { data } = response as { data?: unknown };
+      if (!data || typeof data !== 'object') {
+        return response;
+      }
+
+      const dataObj = data as { groups?: unknown; ruleGroups?: unknown };
+
+      if (Array.isArray(dataObj.groups)) {
+        return dataObj.groups;
+      }
+
+      if (Array.isArray(dataObj.ruleGroups)) {
+        return dataObj.ruleGroups;
+      }
+
+      return data;
+    },
+  },
+  {
+    url: '/api/alerting/rules',
+  },
+];
 
 const tableStyles = css`
   width: 100%;
@@ -72,9 +109,7 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
     this.setState({ loading: true, error: undefined });
 
     try {
-      const response = await getBackendSrv().get('/api/ruler/grafana/api/v1/rules');
-      const list = normalizeRuleResponse(response);
-
+      const list = await fetchAlertRules();
       const normalized = list.map((item, index) => {
         const id = item.uid ?? String(item.id ?? item.title ?? index);
         const updated = item.updated ? new Date(item.updated) : undefined;
@@ -103,61 +138,153 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
   }
 }
 
+async function fetchAlertRules(): Promise<RawAlertRule[]> {
+  let lastError: unknown;
+
+  for (const endpoint of ALERT_RULE_ENDPOINTS) {
+    try {
+      const response = await getBackendSrv().get(endpoint.url);
+      const payload = endpoint.unwrap ? endpoint.unwrap(response) : response;
+      return normalizeRuleResponse(payload);
+    } catch (error) {
+      lastError = error;
+      if (!shouldRetryEndpoint(error)) {
+        throw error;
+      }
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  return [];
+}
+
+function shouldRetryEndpoint(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const maybeError = error as { status?: number };
+
+  if (typeof maybeError.status === 'number') {
+    return maybeError.status === 404 || maybeError.status === 405;
+  }
+
+  return false;
+}
+
 function normalizeRuleResponse(response: unknown): RawAlertRule[] {
   if (!response) {
     return [];
   }
 
   const ruleSets: RawAlertRule[] = [];
+  const visited = new Set<object>();
 
-  const collectFromGroup = (group: unknown, folderHint?: string) => {
-    if (!group || typeof group !== 'object') {
+  const visit = (value: unknown, folderHint?: string) => {
+    if (!value) {
       return;
     }
 
-    const groupObj = group as { rules?: RawAlertRule[]; name?: string };
-    const folderName = groupObj.name ?? folderHint;
-
-    if (!Array.isArray(groupObj.rules)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item, folderHint);
+      }
       return;
     }
 
-    for (const rule of groupObj.rules) {
+    if (typeof value !== 'object') {
+      return;
+    }
+
+    const objectValue = value as Record<string, unknown> & {
+      rules?: RawAlertRule[];
+      groups?: unknown;
+      folderTitle?: string;
+      ruleGroup?: string;
+      name?: string;
+    };
+
+    if (visited.has(objectValue)) {
+      return;
+    }
+
+    visited.add(objectValue);
+
+    const folderNameCandidate =
+      (typeof objectValue.folderTitle === 'string' && objectValue.folderTitle) ||
+      (typeof objectValue.ruleGroup === 'string' && objectValue.ruleGroup) ||
+      (typeof objectValue.name === 'string' && objectValue.name) ||
+      folderHint;
+
+    const isRuleCandidate =
+      !Array.isArray(objectValue.rules) &&
+      (Object.prototype.hasOwnProperty.call(objectValue, 'state') ||
+        Object.prototype.hasOwnProperty.call(objectValue, 'title') ||
+        Object.prototype.hasOwnProperty.call(objectValue, 'name'));
+
+    if (isRuleCandidate) {
+      const ruleObject = objectValue as RawAlertRule;
       ruleSets.push({
-        ...rule,
-        folderTitle: rule.folderTitle ?? folderName ?? rule.ruleGroup,
+        ...ruleObject,
+        folderTitle: ruleObject.folderTitle ?? folderNameCandidate ?? ruleObject.ruleGroup,
       });
+    }
+
+    if (Array.isArray(objectValue.rules)) {
+      for (const rule of objectValue.rules) {
+        ruleSets.push({
+          ...rule,
+          folderTitle:
+            rule.folderTitle ??
+            folderNameCandidate ??
+            rule.ruleGroup ??
+            objectValue.folderTitle ??
+            objectValue.ruleGroup,
+        });
+      }
+    }
+
+    if (objectValue.groups) {
+      visit(objectValue.groups, folderNameCandidate);
+    }
+
+    for (const [key, nested] of Object.entries(objectValue)) {
+      if (key === 'rules' || key === 'groups' || nested == null) {
+        continue;
+      }
+
+      const nextHint =
+        typeof nested === 'object' || Array.isArray(nested)
+          ? typeof key === 'string' && key !== 'status' && key !== 'data'
+            ? key
+            : folderNameCandidate
+          : folderNameCandidate;
+
+      visit(nested, nextHint);
     }
   };
 
-  if (Array.isArray(response)) {
-    for (const entry of response) {
-      collectFromGroup(entry);
-    }
-    return ruleSets;
-  }
-
-  if (typeof response !== 'object') {
-    return [];
-  }
-
-  for (const [folder, value] of Object.entries(response as Record<string, unknown>)) {
-    if (Array.isArray(value)) {
-      for (const group of value) {
-        collectFromGroup(group, folder);
-      }
-      continue;
-    }
-
-    collectFromGroup(value, folder);
-  }
+  visit(response);
 
   return ruleSets;
 }
 
 function extractErrorMessage(error: unknown): string {
   if (error && typeof error === 'object') {
-    const maybeError = error as { statusText?: string; message?: string; data?: { message?: string } };
+    const maybeError = error as {
+      status?: number;
+      statusText?: string;
+      message?: string;
+      data?: { message?: string };
+    };
+
+    if (maybeError.status === 404) {
+      return 'Grafana Alerting API 尚未啟用或使用者權限不足，請確認設定後再試。';
+    }
+
     return (
       maybeError.data?.message ??
       maybeError.message ??
