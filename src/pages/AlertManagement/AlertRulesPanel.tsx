@@ -41,6 +41,7 @@ interface AlertRulesPanelState extends SceneObjectState {
   rules: AlertRuleSummary[];
   connectionMessage?: string;
   connectionSeverity?: 'info' | 'success' | 'warning' | 'error';
+  rawResponse?: string;
 }
 
 export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
@@ -73,6 +74,7 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
         loading: false,
         error: undefined,
         rules: [],
+        rawResponse: undefined,
         connectionMessage: 'Grafana MCP 尚未啟用，無法取得告警規則。請於 Grafana LLM App 中啟用 MCP 伺服器後再試。',
         connectionSeverity: 'warning',
       });
@@ -83,6 +85,7 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
       this.setState({
         connectionMessage: 'Grafana MCP 連線建立中，請稍候再重新整理。',
         connectionSeverity: 'info',
+        rawResponse: undefined,
       });
       return;
     }
@@ -99,6 +102,7 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
       this.setState({
         loading: false,
         rules: [],
+        rawResponse: undefined,
         connectionMessage: 'Grafana MCP 尚未啟用，無法取得告警規則。請先在 Grafana LLM App 設定中啟用 MCP 伺服器。',
         connectionSeverity: 'warning',
       });
@@ -111,6 +115,7 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
         loading: false,
         rules: [],
         error: undefined,
+        rawResponse: undefined,
         connectionMessage: `無法建立 Grafana MCP 連線：${context.error.message}`,
         connectionSeverity: 'error',
       });
@@ -121,6 +126,7 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
       this.setState({
         connectionMessage: 'Grafana MCP 連線建立中，初始化完成後將自動載入告警資料。',
         connectionSeverity: 'info',
+        rawResponse: undefined,
       });
       return;
     }
@@ -128,6 +134,7 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
     this.setState({
       connectionMessage: undefined,
       connectionSeverity: undefined,
+      rawResponse: undefined,
     });
 
     if (!this.initialized) {
@@ -143,8 +150,8 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
     this.setState({ loading: true, error: undefined });
 
     try {
-      const list = await fetchAlertRules(this.mcpClient);
-      const normalized = list.map((item, index) => {
+      const { items, rawPayload } = await fetchAlertRules(this.mcpClient);
+      const normalized = items.map((item, index) => {
         const uid = item.uid ?? String(item.id ?? item.title ?? index);
 
         return {
@@ -165,6 +172,7 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
         loading: false,
         error: undefined,
         rules: normalized,
+        rawResponse: formatRawPayload(rawPayload),
       });
     } catch (err) {
       const message = extractErrorMessage(err);
@@ -172,6 +180,7 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
         loading: false,
         error: message,
         rules: [],
+        rawResponse: undefined,
       });
     }
   }
@@ -293,6 +302,12 @@ function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>
           </tbody>
         </table>
       )}
+      {state.rawResponse && (
+        <div className={styles.rawPanel}>
+          <div className={styles.rawHeader}>原始 MCP 回傳資料</div>
+          <pre className={styles.rawContent}>{state.rawResponse}</pre>
+        </div>
+      )}
     </div>
   );
 }
@@ -357,7 +372,9 @@ function KeyValueList({
   );
 }
 
-async function fetchAlertRules(client: MCPClient): Promise<RawAlertRule[]> {
+async function fetchAlertRules(
+  client: MCPClient
+): Promise<{ items: RawAlertRule[]; rawPayload: string }> {
   const result = await client.callTool({
     name: 'list_alert_rules',
     arguments: {},
@@ -366,7 +383,7 @@ async function fetchAlertRules(client: MCPClient): Promise<RawAlertRule[]> {
   const textPayload = extractTextPayload(result?.content);
 
   if (!textPayload) {
-    return [];
+    return { items: [], rawPayload: '[]' };
   }
 
   const parsed = safeParseJSON(textPayload);
@@ -375,7 +392,7 @@ async function fetchAlertRules(client: MCPClient): Promise<RawAlertRule[]> {
     throw new Error('MCP 回傳格式不符合預期，請確認 Grafana MCP 伺服器版本。');
   }
 
-  return parsed.map((item) => normalizeMCPAlertRule(item));
+  return { items: parsed.map((item) => normalizeMCPAlertRule(item)), rawPayload: textPayload };
 }
 
 function extractTextPayload(content: unknown): string {
@@ -404,6 +421,22 @@ function safeParseJSON(payload: string): unknown {
     return JSON.parse(payload);
   } catch (error) {
     throw new Error('無法解析 MCP 回傳的告警資料，請稍後再試。');
+  }
+}
+
+/**
+ * 將 MCP 原始回傳內容轉為可讀格式，同時保留原始字串做為除錯依據。
+ */
+function formatRawPayload(raw: string): string {
+  if (!raw) {
+    return '[]';
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    return JSON.stringify(parsed, null, 2);
+  } catch (error) {
+    return raw;
   }
 }
 
@@ -540,5 +573,30 @@ const getStyles = (theme: GrafanaTheme2) => ({
     border: 1px solid ${theme.colors.border.weak};
     font-family: ${theme.typography.fontFamilyMonospace};
     font-size: ${theme.typography.bodySmall.fontSize};
+  `,
+  rawPanel: css`
+    margin-top: ${theme.spacing(3)};
+    border: 1px solid ${theme.colors.border.weak};
+    border-radius: 4px;
+    background: ${theme.colors.background.canvas};
+    overflow: hidden;
+  `,
+  rawHeader: css`
+    padding: ${theme.spacing(1)} ${theme.spacing(2)};
+    background: ${theme.colors.background.secondary};
+    color: ${theme.colors.text.primary};
+    font-weight: ${theme.typography.fontWeightMedium};
+    border-bottom: 1px solid ${theme.colors.border.weak};
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-size: ${theme.typography.bodySmall.fontSize};
+  `,
+  rawContent: css`
+    margin: 0;
+    padding: ${theme.spacing(2)};
+    font-family: ${theme.typography.fontFamilyMonospace};
+    font-size: ${theme.typography.bodySmall.fontSize};
+    white-space: pre-wrap;
+    overflow-x: auto;
   `,
 });

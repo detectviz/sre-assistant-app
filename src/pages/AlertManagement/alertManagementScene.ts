@@ -5,6 +5,7 @@ export const alertManagementScene = () => {
   const panel = new AlertRulesPanel({
     loading: true,
     rules: [],
+    rawResponse: undefined,
   });
 
   return new EmbeddedScene({
