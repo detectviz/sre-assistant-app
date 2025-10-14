@@ -72,8 +72,8 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
     this.setState({ loading: true, error: undefined });
 
     try {
-      const response = await getBackendSrv().get('/api/alert-rules');
-      const list = Array.isArray(response) ? (response as RawAlertRule[]) : [];
+      const response = await getBackendSrv().get('/api/ruler/grafana/api/v1/rules');
+      const list = normalizeRuleResponse(response);
 
       const normalized = list.map((item, index) => {
         const id = item.uid ?? String(item.id ?? item.title ?? index);
@@ -93,7 +93,7 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
         rules: normalized,
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : '無法取得告警規則資料';
+      const message = extractErrorMessage(err);
       this.setState({
         loading: false,
         error: message,
@@ -101,6 +101,72 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
       });
     }
   }
+}
+
+function normalizeRuleResponse(response: unknown): RawAlertRule[] {
+  if (!response) {
+    return [];
+  }
+
+  const ruleSets: RawAlertRule[] = [];
+
+  const collectFromGroup = (group: unknown, folderHint?: string) => {
+    if (!group || typeof group !== 'object') {
+      return;
+    }
+
+    const groupObj = group as { rules?: RawAlertRule[]; name?: string };
+    const folderName = groupObj.name ?? folderHint;
+
+    if (!Array.isArray(groupObj.rules)) {
+      return;
+    }
+
+    for (const rule of groupObj.rules) {
+      ruleSets.push({
+        ...rule,
+        folderTitle: rule.folderTitle ?? folderName ?? rule.ruleGroup,
+      });
+    }
+  };
+
+  if (Array.isArray(response)) {
+    for (const entry of response) {
+      collectFromGroup(entry);
+    }
+    return ruleSets;
+  }
+
+  if (typeof response !== 'object') {
+    return [];
+  }
+
+  for (const [folder, value] of Object.entries(response as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      for (const group of value) {
+        collectFromGroup(group, folder);
+      }
+      continue;
+    }
+
+    collectFromGroup(value, folder);
+  }
+
+  return ruleSets;
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const maybeError = error as { statusText?: string; message?: string; data?: { message?: string } };
+    return (
+      maybeError.data?.message ??
+      maybeError.message ??
+      maybeError.statusText ??
+      '無法取得告警規則資料，請稍後再試。'
+    );
+  }
+
+  return '無法取得告警規則資料，請稍後再試。';
 }
 
 function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>) {
