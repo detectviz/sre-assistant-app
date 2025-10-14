@@ -1,8 +1,9 @@
 import React, { useEffect } from 'react';
-import { getBackendSrv } from '@grafana/runtime';
 import { Badge, Button, Spinner, Alert, type BadgeColor } from '@grafana/ui';
 import { css } from '@emotion/css';
 import { SceneObjectBase, type SceneComponentProps, type SceneObjectState } from '@grafana/scenes';
+import { mcp } from '@grafana/llm';
+import type { Client as MCPClient } from '@modelcontextprotocol/sdk/client/index';
 
 interface RawAlertRule {
   id?: number;
@@ -11,62 +12,32 @@ interface RawAlertRule {
   name?: string;
   state?: string;
   folderTitle?: string;
+  folderUID?: string;
   ruleGroup?: string;
   updated?: string;
+  health?: string;
+  labels?: Record<string, string>;
+  for?: string;
 }
 
 interface AlertRuleSummary {
   id: string;
   title: string;
   state: string;
-  folder: string;
+  health: string;
+  location: string;
+  durationText: string;
   updatedText: string;
+  labels: Record<string, string>;
 }
 
 interface AlertRulesPanelState extends SceneObjectState {
   loading: boolean;
   error?: string;
   rules: AlertRuleSummary[];
+  connectionMessage?: string;
+  connectionSeverity?: 'info' | 'success' | 'warning' | 'error';
 }
-
-interface AlertRuleEndpoint {
-  url: string;
-  unwrap?: (response: unknown) => unknown;
-}
-
-const ALERT_RULE_ENDPOINTS: AlertRuleEndpoint[] = [
-  {
-    url: '/api/ruler/grafana/api/v1/rules',
-  },
-  {
-    url: '/api/alertmanager/grafana/config/api/v1/rules',
-    unwrap: (response: unknown) => {
-      if (!response || typeof response !== 'object') {
-        return response;
-      }
-
-      const { data } = response as { data?: unknown };
-      if (!data || typeof data !== 'object') {
-        return response;
-      }
-
-      const dataObj = data as { groups?: unknown; ruleGroups?: unknown };
-
-      if (Array.isArray(dataObj.groups)) {
-        return dataObj.groups;
-      }
-
-      if (Array.isArray(dataObj.ruleGroups)) {
-        return dataObj.ruleGroups;
-      }
-
-      return data;
-    },
-  },
-  {
-    url: '/api/alerting/rules',
-  },
-];
 
 const tableStyles = css`
   width: 100%;
@@ -85,40 +56,139 @@ const tableStyles = css`
   }
 `;
 
+const labelListStyles = css`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+`;
+
+const labelPillStyles = css`
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--background-secondary, #f2f3f5);
+  font-family: var(--font-family-monospace);
+  font-size: 12px;
+`;
+
 export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
   static Component = AlertRulesPanelRenderer;
 
   private initialized = false;
+  private mcpClient: MCPClient | null = null;
+  private mcpEnabled = false;
 
   constructor(initialState: AlertRulesPanelState) {
     super(initialState);
   }
 
   ensureLoaded() {
-    if (!this.initialized) {
-      this.initialized = true;
-      void this.loadRules();
+    if (this.initialized) {
+      return;
     }
-  }
 
-  refresh() {
+    if (!this.mcpEnabled || !this.mcpClient) {
+      return;
+    }
+
+    this.initialized = true;
     void this.loadRules();
   }
 
+  refresh() {
+    if (!this.mcpEnabled) {
+      this.setState({
+        loading: false,
+        error: undefined,
+        rules: [],
+        connectionMessage: 'Grafana MCP 尚未啟用，無法取得告警規則。請於 Grafana LLM App 中啟用 MCP 伺服器後再試。',
+        connectionSeverity: 'warning',
+      });
+      return;
+    }
+
+    if (!this.mcpClient) {
+      this.setState({
+        connectionMessage: 'Grafana MCP 連線建立中，請稍候再重新整理。',
+        connectionSeverity: 'info',
+      });
+      return;
+    }
+
+    void this.loadRules();
+  }
+
+  setMCPContext(context: { client: MCPClient | null; enabled: boolean; error?: Error }) {
+    this.mcpEnabled = context.enabled;
+    this.mcpClient = context.client;
+
+    if (!context.enabled) {
+      this.initialized = false;
+      this.setState({
+        loading: false,
+        rules: [],
+        connectionMessage: 'Grafana MCP 尚未啟用，無法取得告警規則。請先在 Grafana LLM App 設定中啟用 MCP 伺服器。',
+        connectionSeverity: 'warning',
+      });
+      return;
+    }
+
+    if (context.error) {
+      this.initialized = false;
+      this.setState({
+        loading: false,
+        rules: [],
+        error: undefined,
+        connectionMessage: `無法建立 Grafana MCP 連線：${context.error.message}`,
+        connectionSeverity: 'error',
+      });
+      return;
+    }
+
+    if (!context.client) {
+      this.setState({
+        connectionMessage: 'Grafana MCP 連線建立中，初始化完成後將自動載入告警資料。',
+        connectionSeverity: 'info',
+      });
+      return;
+    }
+
+    this.setState({
+      connectionMessage: undefined,
+      connectionSeverity: undefined,
+    });
+
+    if (!this.initialized) {
+      this.ensureLoaded();
+    }
+  }
+
   private async loadRules() {
+    if (!this.mcpEnabled || !this.mcpClient) {
+      return;
+    }
+
     this.setState({ loading: true, error: undefined });
 
     try {
-      const list = await fetchAlertRules();
+      const list = await fetchAlertRules(this.mcpClient);
       const normalized = list.map((item, index) => {
         const id = item.uid ?? String(item.id ?? item.title ?? index);
-        const updated = item.updated ? new Date(item.updated) : undefined;
+        const updated =
+          item.updated && !Number.isNaN(Date.parse(item.updated)) ? new Date(item.updated) : undefined;
+        const location = item.folderTitle ?? item.ruleGroup ?? item.folderUID ?? '未分類';
+        const durationText = item.for && item.for.trim() !== '' ? item.for : '未設定';
+
         return {
           id,
           title: item.title ?? item.name ?? '未命名規則',
           state: item.state ?? 'unknown',
-          folder: item.folderTitle ?? item.ruleGroup ?? '未分類',
-          updatedText: updated ? updated.toLocaleString() : '無更新時間',
+          health: item.health ?? 'unknown',
+          location,
+          durationText,
+          updatedText: updated ? updated.toLocaleString() : '無評估時間',
+          labels: item.labels ?? {},
         } satisfies AlertRuleSummary;
       });
 
@@ -136,140 +206,6 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
       });
     }
   }
-}
-
-async function fetchAlertRules(): Promise<RawAlertRule[]> {
-  let lastError: unknown;
-
-  for (const endpoint of ALERT_RULE_ENDPOINTS) {
-    try {
-      const response = await getBackendSrv().get(endpoint.url);
-      const payload = endpoint.unwrap ? endpoint.unwrap(response) : response;
-      return normalizeRuleResponse(payload);
-    } catch (error) {
-      lastError = error;
-      if (!shouldRetryEndpoint(error)) {
-        throw error;
-      }
-    }
-  }
-
-  if (lastError) {
-    throw lastError;
-  }
-
-  return [];
-}
-
-function shouldRetryEndpoint(error: unknown): boolean {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-
-  const maybeError = error as { status?: number };
-
-  if (typeof maybeError.status === 'number') {
-    return maybeError.status === 404 || maybeError.status === 405;
-  }
-
-  return false;
-}
-
-function normalizeRuleResponse(response: unknown): RawAlertRule[] {
-  if (!response) {
-    return [];
-  }
-
-  const ruleSets: RawAlertRule[] = [];
-  const visited = new Set<object>();
-
-  const visit = (value: unknown, folderHint?: string) => {
-    if (!value) {
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        visit(item, folderHint);
-      }
-      return;
-    }
-
-    if (typeof value !== 'object') {
-      return;
-    }
-
-    const objectValue = value as Record<string, unknown> & {
-      rules?: RawAlertRule[];
-      groups?: unknown;
-      folderTitle?: string;
-      ruleGroup?: string;
-      name?: string;
-    };
-
-    if (visited.has(objectValue)) {
-      return;
-    }
-
-    visited.add(objectValue);
-
-    const folderNameCandidate =
-      (typeof objectValue.folderTitle === 'string' && objectValue.folderTitle) ||
-      (typeof objectValue.ruleGroup === 'string' && objectValue.ruleGroup) ||
-      (typeof objectValue.name === 'string' && objectValue.name) ||
-      folderHint;
-
-    const isRuleCandidate =
-      !Array.isArray(objectValue.rules) &&
-      (Object.prototype.hasOwnProperty.call(objectValue, 'state') ||
-        Object.prototype.hasOwnProperty.call(objectValue, 'title') ||
-        Object.prototype.hasOwnProperty.call(objectValue, 'name'));
-
-    if (isRuleCandidate) {
-      const ruleObject = objectValue as RawAlertRule;
-      ruleSets.push({
-        ...ruleObject,
-        folderTitle: ruleObject.folderTitle ?? folderNameCandidate ?? ruleObject.ruleGroup,
-      });
-    }
-
-    if (Array.isArray(objectValue.rules)) {
-      for (const rule of objectValue.rules) {
-        ruleSets.push({
-          ...rule,
-          folderTitle:
-            rule.folderTitle ??
-            folderNameCandidate ??
-            rule.ruleGroup ??
-            objectValue.folderTitle ??
-            objectValue.ruleGroup,
-        });
-      }
-    }
-
-    if (objectValue.groups) {
-      visit(objectValue.groups, folderNameCandidate);
-    }
-
-    for (const [key, nested] of Object.entries(objectValue)) {
-      if (key === 'rules' || key === 'groups' || nested == null) {
-        continue;
-      }
-
-      const nextHint =
-        typeof nested === 'object' || Array.isArray(nested)
-          ? typeof key === 'string' && key !== 'status' && key !== 'data'
-            ? key
-            : folderNameCandidate
-          : folderNameCandidate;
-
-      visit(nested, nextHint);
-    }
-  };
-
-  visit(response);
-
-  return ruleSets;
 }
 
 function extractErrorMessage(error: unknown): string {
@@ -293,24 +229,40 @@ function extractErrorMessage(error: unknown): string {
     );
   }
 
+  if (error instanceof Error) {
+    return error.message;
+  }
+
   return '無法取得告警規則資料，請稍後再試。';
 }
 
 function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>) {
   const state = model.useState();
+  const { client, enabled, error: mcpError } = mcp.useMCPClient();
+
+  useEffect(() => {
+    model.setMCPContext({ client, enabled, error: mcpError ?? undefined });
+  }, [client, enabled, mcpError, model]);
 
   useEffect(() => {
     model.ensureLoaded();
-  }, [model]);
+  }, [model, client, enabled]);
+
+  const refreshDisabled = state.loading || !enabled || !client;
 
   return (
     <div>
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-        <Button icon="sync" onClick={() => model.refresh()} disabled={state.loading}>
+        <Button icon="sync" onClick={() => model.refresh()} disabled={refreshDisabled}>
           重新整理
         </Button>
-        {state.loading && <Spinner inline={true} size={16} />} 
+        {state.loading && <Spinner inline={true} size={16} />}
       </div>
+      {state.connectionMessage && (
+        <Alert title="MCP 連線狀態" severity={state.connectionSeverity ?? 'info'} style={{ marginTop: '12px' }}>
+          {state.connectionMessage}
+        </Alert>
+      )}
       {state.error && (
         <Alert title="讀取失敗" severity="error" style={{ marginTop: '12px' }}>
           {state.error}
@@ -327,8 +279,11 @@ function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>
             <tr>
               <th>名稱</th>
               <th>狀態</th>
+              <th>健康度</th>
               <th>資料夾 / 群組</th>
-              <th>最近更新</th>
+              <th>持續時間</th>
+              <th>最近評估</th>
+              <th>主要標籤</th>
             </tr>
           </thead>
           <tbody>
@@ -336,10 +291,17 @@ function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>
               <tr key={rule.id}>
                 <td>{rule.title}</td>
                 <td>
-                  <Badge text={rule.state.toUpperCase()} color={badgeColor(rule.state)} />
+                  <Badge text={rule.state.toUpperCase()} color={stateBadgeColor(rule.state)} />
                 </td>
-                <td>{rule.folder}</td>
+                <td>
+                  <Badge text={rule.health.toUpperCase()} color={healthBadgeColor(rule.health)} />
+                </td>
+                <td>{rule.location}</td>
+                <td>{rule.durationText}</td>
                 <td>{rule.updatedText}</td>
+                <td>
+                  <LabelList labels={rule.labels} />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -349,7 +311,7 @@ function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>
   );
 }
 
-function badgeColor(state: string): BadgeColor {
+function stateBadgeColor(state: string): BadgeColor {
   switch (state.toLowerCase()) {
     case 'ok':
       return 'green';
@@ -357,7 +319,125 @@ function badgeColor(state: string): BadgeColor {
       return 'blue';
     case 'firing':
       return 'red';
+    case 'inactive':
+      return 'green';
+    case 'recovering':
+      return 'orange';
     default:
       return 'darkgrey';
   }
+}
+
+function healthBadgeColor(health: string): BadgeColor {
+  switch (health.toLowerCase()) {
+    case 'ok':
+      return 'green';
+    case 'error':
+      return 'red';
+    case 'warning':
+      return 'orange';
+    case 'no_data':
+      return 'darkgrey';
+    default:
+      return 'blue';
+  }
+}
+
+function LabelList({ labels }: { labels: Record<string, string> }) {
+  const entries = Object.entries(labels);
+
+  if (entries.length === 0) {
+    return <span>無</span>;
+  }
+
+  return (
+    <div className={labelListStyles}>
+      {entries.map(([key, value]) => (
+        <span key={`${key}:${value}`} className={labelPillStyles}>
+          {`${key}=${value}`}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+async function fetchAlertRules(client: MCPClient): Promise<RawAlertRule[]> {
+  const result = await client.callTool({
+    name: 'list_alert_rules',
+    arguments: {},
+  });
+
+  const textPayload = extractTextPayload(result?.content);
+
+  if (!textPayload) {
+    return [];
+  }
+
+  const parsed = safeParseJSON(textPayload);
+
+  if (!Array.isArray(parsed)) {
+    throw new Error('MCP 回傳格式不符合預期，請確認 Grafana MCP 伺服器版本。');
+  }
+
+  return parsed.map((item) => normalizeMCPAlertRule(item));
+}
+
+function extractTextPayload(content: unknown): string {
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .map((entry) => {
+      if (entry && typeof entry === 'object' && 'type' in entry && (entry as { type?: unknown }).type === 'text') {
+        const textValue = (entry as { text?: unknown }).text;
+        return typeof textValue === 'string' ? textValue : '';
+      }
+      return '';
+    })
+    .join('')
+    .trim();
+}
+
+function safeParseJSON(payload: string): unknown {
+  if (!payload) {
+    return [];
+  }
+
+  try {
+    return JSON.parse(payload);
+  } catch (error) {
+    throw new Error('無法解析 MCP 回傳的告警資料，請稍後再試。');
+  }
+}
+
+function normalizeMCPAlertRule(value: unknown): RawAlertRule {
+  if (!value || typeof value !== 'object') {
+    throw new Error('MCP 告警資料缺少必要欄位，請確認權限與 Grafana 版本。');
+  }
+
+  const candidate = value as Partial<RawAlertRule> & {
+    uid?: string;
+    title?: string;
+    state?: string;
+    health?: string;
+    folderUID?: string;
+    ruleGroup?: string;
+    for?: string;
+    lastEvaluation?: string;
+    labels?: Record<string, string>;
+  };
+
+  return {
+    uid: candidate.uid,
+    title: candidate.title,
+    state: candidate.state,
+    health: candidate.health,
+    folderTitle: candidate.folderUID,
+    folderUID: candidate.folderUID,
+    ruleGroup: candidate.ruleGroup,
+    updated: candidate.lastEvaluation,
+    labels: candidate.labels,
+    for: candidate.for,
+  };
 }
