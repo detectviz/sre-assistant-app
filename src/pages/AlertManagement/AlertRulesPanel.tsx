@@ -412,31 +412,60 @@ function normalizeMCPAlertRule(value: unknown): RawAlertRule {
     throw new Error('MCP 告警資料缺少必要欄位，請確認權限與 Grafana 版本。');
   }
 
-  const candidate = value as Partial<RawAlertRule> & {
-    uid?: string;
-    title?: string;
-    state?: string;
-    health?: string;
-    folderUID?: string;
-    ruleGroup?: string;
-    for?: string;
-    lastEvaluation?: string;
-    labels?: Record<string, string>;
-    annotations?: Record<string, string>;
-  };
+  const record = value as Record<string, unknown>;
 
   return {
-    uid: candidate.uid,
-    title: candidate.title,
-    state: candidate.state,
-    health: candidate.health,
-    folderUID: candidate.folderUID,
-    ruleGroup: candidate.ruleGroup,
-    updated: candidate.lastEvaluation,
-    labels: candidate.labels,
-    annotations: candidate.annotations,
-    for: candidate.for,
+    uid: coerceString(record['uid'] ?? record['UID']),
+    title: coerceString(record['title'] ?? record['name']),
+    state: coerceString(record['state']),
+    health: coerceString(record['health'] ?? record['overallHealth']),
+    folderUID: coerceString(record['folderUID'] ?? record['folderUid']),
+    ruleGroup: coerceString(record['ruleGroup'] ?? record['group']),
+    for: coerceString(record['for'] ?? record['duration']),
+    lastEvaluation: coerceString(
+      record['lastEvaluation'] ?? record['lastEvaluationTime'] ?? record['updated'] ?? record['activeAt']
+    ),
+    updated: coerceString(record['updated']),
+    labels: coerceDictionary(record['labels']),
+    annotations: coerceDictionary(record['annotations']),
   };
+}
+
+/**
+ * 將未知值安全轉為字串，避免原始資料格式略有差異時造成欄位遺失。
+ */
+function coerceString(value: unknown): string | undefined {
+  if (value == null) {
+    return undefined;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return undefined;
+}
+
+/**
+ * 將標籤或註解物件轉為純字串字典，確保畫面呈現與 MCP 響應一致。
+ */
+function coerceDictionary(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+
+  return Object.entries(value as Record<string, unknown>).reduce<Record<string, string>>((acc, [key, entryValue]) => {
+    const normalizedValue = coerceString(entryValue);
+    if (normalizedValue !== undefined) {
+      acc[key] = normalizedValue;
+    }
+    return acc;
+  }, {});
 }
 
 function formatDuration(value?: string): string {
