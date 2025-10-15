@@ -390,19 +390,51 @@ async function fetchAlertRules(
     arguments: {},
   });
 
-  const textPayload = extractTextPayload(result?.content);
+  const jsonPayload = extractJSONPayload(result?.content);
+  const payload = jsonPayload ?? extractTextPayload(result?.content);
 
-  if (!textPayload) {
+  if (!payload) {
     return { items: [], rawPayload: '[]' };
   }
 
-  const parsed = safeParseJSON(textPayload);
+  const parsed = safeParseJSON(payload);
 
   if (!Array.isArray(parsed)) {
     throw new Error('MCP 回傳格式不符合預期，請確認 Grafana MCP 伺服器版本。');
   }
 
-  return { items: parsed.map((item) => normalizeMCPAlertRule(item)), rawPayload: textPayload };
+  return { items: parsed.map((item) => normalizeMCPAlertRule(item)), rawPayload: payload };
+}
+
+function extractJSONPayload(content: unknown): string | null {
+  if (!Array.isArray(content)) {
+    return null;
+  }
+
+  for (const entry of content) {
+    if (
+      entry &&
+      typeof entry === 'object' &&
+      'type' in entry &&
+      (entry as { type?: unknown }).type === 'json'
+    ) {
+      const jsonValue = (entry as { json?: unknown }).json;
+
+      if (typeof jsonValue === 'string') {
+        return jsonValue.trim();
+      }
+
+      if (jsonValue !== undefined) {
+        try {
+          return JSON.stringify(jsonValue);
+        } catch (error) {
+          return null;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 function extractTextPayload(content: unknown): string {
