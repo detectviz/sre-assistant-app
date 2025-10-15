@@ -1,117 +1,119 @@
-# Grafana Scenes App Plugin Template
+# SRE Assistant APP Plugin 架構說明
 
-This template is a starting point for building an app plugin with [scenes](https://grafana.com/developers/scenes) for Grafana.
+## 1. 總覽
 
-## What are Grafana app plugins?
+**SRE Assistant APP Plugin** 是一個基於 Grafana 的 **App Plugin**，提供 AI 協助的可觀察性、事件智慧診斷與自動化功能。
 
-App plugins can let you create a custom out-of-the-box monitoring experience by custom pages, nested datasources and panel plugins.
+### 核心特色
+- **前端驅動**: 前端直接透過 `@grafana/llm` 呼叫 LLM 和 MCP 工具
+- **無後端邏輯**: 初期版本避免複雜的後端 API 調用，專注於前端體驗
+- **漸進式擴充**: 待功能穩定後，再逐步添加後端邏輯和 API 整合
 
-## What is @grafana/scenes?
+### 架構原則
+- **簡潔優先**: 避免過度複雜的架構設計
+- **前端主導**: 將主要邏輯放在前端，減少網路往返
+- **可擴充性**: 保留後端擴充的空間，但初期不實現
 
-[@grafana/scenes](https://github.com/grafana/scenes) is a framework to enable versatile app plugins implementation. It provides an easy way to build apps that resemble Grafana's dashboarding experience, including template variables support, versatile layouts, panels rendering and more.
+---
 
-To learn more about @grafana/scenes usage please refer to the [documentation](https://grafana.com/developers/scenes)
+## 2. 核心組件
 
-## What does this template contain?
+| 組件 | 技術棧 | 責任範圍 | 說明 |
+|------|--------|----------|------|
+| **前端介面** | React + TypeScript + Grafana Scenes SDK | 使用者互動、AI 對話、結果展示 | 提供直觀的 AI 助手介面，直接呼叫 LLM 和 MCP 工具 |
+| **LLM 整合** | `@grafana/llm` | AI 推理、工具調用、自然語言處理 | 前端直接與 Grafana LLM App 通信，處理工具調用邏輯 |
+| **MCP 工具** | Grafana MCP Server | 數據查詢、系統操作 | 提供 50+ 種 Grafana 生態工具，前端可直接調用 |
+| **Grafana 平台** | Grafana App Plugin | 插件容器、權限管理、安全性 | 提供插件運行環境和統一的認證授權 |
 
-1. An example of a simple scene. See [Home scene](./src/pages/Home/Home.tsx)
-1. An example of a scene with tabs. See [Scene with tabs](./src/pages/WithTabs/WithTabs.tsx)
-1. An example of a scene with drill down. See [Scene with drill down](./src/pages/WithDrilldown/WithDrilldown.tsx)
+---
 
-### Frontend
+## 3. 前端資料互動流程
 
-1. Install dependencies
+### 當前實現（前端驅動）
+| 步驟 | 說明 | 技術實現 |
+|------|------|----------|
+| **1** | 使用者與 Scene 頁面互動 | React 組件處理使用者輸入和選擇 |
+| **2** | 前端直接呼叫 `@grafana/llm` | 使用 `llm.chatCompletions()` 和 MCP 客戶端 |
+| **3** | LLM 處理工具調用邏輯 | AI 決定是否需要調用 MCP 工具 |
+| **4** | MCP 工具執行查詢 | 直接訪問 Grafana 資料源和 API |
+| **5** | 結果渲染展示 | 使用 Scenes SDK 展示 AI 回應和數據 |
 
-   ```bash
-   npm install
-   ```
+### 設計優勢
+- **減少網路往返**: 前端直接呼叫，避免後端中間層
+- **即時回應**: AI 推理和工具調用都在前端完成
+- **簡化架構**: 不需要複雜的後端 API 設計
+- **快速迭代**: 前端修改即可調整功能邏輯
 
-2. Build plugin in development mode and run in watch mode
+---
 
-   ```bash
-   npm run dev
-   ```
+## 4. 安全性與權限
 
-3. Build plugin in production mode
+### 當前實現（前端驅動）
+| 安全層面 | 實現方式 | 說明 |
+|----------|----------|------|
+| **認證** | Grafana 內建認證 | 使用者通過 Grafana 登入，自動繼承權限 |
+| **授權** | RBAC 模型 | 基於使用者角色控制工具存取權限 |
+| **數據隔離** | Org/Folder 級別 | 使用者只能訪問授權的組織和文件夾數據 |
+| **工具權限** | MCP 服務器控制 | 根據使用者權限動態過濾可用工具 |
+| **審計日誌** | 前端行為記錄 | 記錄所有 AI 互動和工具調用 |
 
-   ```bash
-   npm run build
-   ```
+### 未來擴充（後端邏輯）
+- **Metrics 收集**: 後端輸出插件指標（查詢次數、延遲、錯誤率）
+- **Audit Logging**: 自動化與分析行為以 Annotation 記錄
+- **Secure JSON**: 機密資訊透過 Grafana 安全設定儲存
 
-4. Run the tests (using Jest)
+---
 
-   ```bash
-   # Runs the tests and watches for changes, requires git init first
-   npm run test
+## 6. 開發與部署
 
-   # Exits after running all the tests
-   npm run test:ci
-   ```
+### 環境需求
+- **Grafana**: 9.0+ （建議 10.0+）
+- **Node.js**: 18+
+- **Go**: 1.21+ （後端擴充時需要）
 
-5. Spin up a Grafana instance and run the plugin inside it (using Docker)
+### 建置流程
+```bash
+# 安裝依賴
+npm install
 
-   ```bash
-   npm run server
-   ```
+# 前端建置
+npm run build
+```
 
-6. Run the E2E tests (using Playwright)
+### 測試策略
+- **單元測試**: React 組件和工具函數
+- **整合測試**: LLM 和 MCP 工具調用
+- **端到端測試**: 完整使用者流程
 
-   ```bash
-   # Spins up a Grafana instance first that we tests against
-   npm run server
+---
 
-   # If you wish to start a certain Grafana version. If not specified will use latest by default
-   GRAFANA_VERSION=11.3.0 npm run server
+## 7. 未來擴充規劃
 
-   # Starts the tests
-   npm run e2e
-   ```
+### 階段一：前端功能完善（當前焦點）
+- ✅ AI 對話介面優化
+- ✅ MCP 工具深度整合
+- ✅ 使用者體驗改進
+- ✅ 錯誤處理和重試機制
 
-7. Run the linter
+### 階段二：後端邏輯引入（穩定後）
+- 🔄 自訂 Resource API 實現
+- 🔄 複雜業務邏輯處理
+- 🔄 數據聚合和快取
+- 🔄 背景任務處理
+- 🔄 Metrics 和 Audit Logging
 
-   ```bash
-   npm run lint
+### 階段三：進階功能（長期）
+- 🔄 多模型支援（Ollama、Gemini、Vertex）
+- 🔄 自訂 MCP 工具開發
+- 🔄 Kubernetes 上下文整合
+- 🔄 自動化 Playbook 執行
 
-   # or
+---
 
-   npm run lint:fix
-   ```
+## 8. 參考資源
 
-# Distributing your plugin
-
-When distributing a Grafana plugin either within the community or privately the plugin must be signed so the Grafana application can verify its authenticity. This can be done with the `@grafana/sign-plugin` package.
-
-_Note: It's not necessary to sign a plugin during development. The docker development environment that is scaffolded with `@grafana/create-plugin` caters for running the plugin without a signature._
-
-## Initial steps
-
-Before signing a plugin please read the Grafana [plugin publishing and signing criteria](https://grafana.com/legal/plugins/#plugin-publishing-and-signing-criteria) documentation carefully.
-
-`@grafana/create-plugin` has added the necessary commands and workflows to make signing and distributing a plugin via the grafana plugins catalog as straightforward as possible.
-
-Before signing a plugin for the first time please consult the Grafana [plugin signature levels](https://grafana.com/legal/plugins/#what-are-the-different-classifications-of-plugins) documentation to understand the differences between the types of signature level.
-
-1. Create a [Grafana Cloud account](https://grafana.com/signup).
-2. Make sure that the first part of the plugin ID matches the slug of your Grafana Cloud account.
-   - _You can find the plugin ID in the `plugin.json` file inside your plugin directory. For example, if your account slug is `acmecorp`, you need to prefix the plugin ID with `acmecorp-`._
-3. Create a Grafana Cloud API key with the `PluginPublisher` role.
-4. Keep a record of this API key as it will be required for signing a plugin
-
-## Signing a plugin
-
-### Using Github actions release workflow
-
-If the plugin is using the github actions supplied with `@grafana/create-plugin` signing a plugin is included out of the box. The [release workflow](./.github/workflows/release.yml) can prepare everything to make submitting your plugin to Grafana as easy as possible. Before being able to sign the plugin however a secret needs adding to the Github repository.
-
-1. Please navigate to "settings > secrets > actions" within your repo to create secrets.
-2. Click "New repository secret"
-3. Name the secret "GRAFANA_API_KEY"
-4. Paste your Grafana Cloud API key in the Secret field
-5. Click "Add secret"
-
-#### Push a version tag
-
-To trigger the workflow we need to push a version tag to github. This can be achieved with the following steps:
-
-1. Run `npm version <major|minor|patch>`
-2. Run `git push origin main --follow-tags`
+- [Grafana Plugin Development](https://grafana.com/developers/plugin-tools/)
+- [Scenes SDK Documentation](https://grafana.com/developers/scenes/)
+- [@grafana/llm Package](https://www.npmjs.com/package/@grafana/llm)
+- [Grafana LLM App](https://github.com/grafana/grafana-llm-app)
+- [Grafana MCP Grafana Server](https://github.com/grafana/mcp-grafana)

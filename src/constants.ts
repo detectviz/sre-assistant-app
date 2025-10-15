@@ -7,9 +7,13 @@ export enum ROUTES {
   WithTabs = 'page-with-tabs',
   WithDrilldown = 'page-with-drilldown',
   HelloWorld = 'hello-world',
+  RealTimeMetrics = 'real-time-metrics',
+  LogAnalysis = 'log-analysis',
+  AlertManagement = 'alert-management',
 }
 
 export const DATASOURCE_REF = {
   uid: 'gdev-testdata',
   type: 'testdata',
 };
+
