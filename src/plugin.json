@@ -73,5 +73,76 @@
   "dependencies": {
     "grafanaDependency": ">=11.2.0",
     "plugins": []
+  },
+  "iam": {
+    "permissions": [
+      {
+        "action": "orgs:read"
+      },
+      {
+        "action": "teams:read",
+        "scope": "teams:*"
+      },
+      {
+        "action": "users:read",
+        "scope": "global.users:*"
+      },
+      {
+        "action": "datasources:read",
+        "scope": "datasources:*"
+      },
+      {
+        "action": "datasources:query",
+        "scope": "datasources:*"
+      },
+      {
+        "action": "dashboards:read",
+        "scope": "dashboards:*"
+      },
+      {
+        "action": "dashboards:create",
+        "scope": "dashboards:*"
+      },
+      {
+        "action": "dashboards:write",
+        "scope": "dashboards:*"
+      },
+      {
+        "action": "folders:read",
+        "scope": "folders:*"
+      },
+      {
+        "action": "alert.rules:read",
+        "scope": "folders:*"
+      },
+      {
+        "action": "alert.notifications:read"
+      },
+      {
+        "action": "alert.instances:read",
+        "scope": "folders:*"
+      },
+      {
+        "action": "grafana-oncall-app.schedules:read"
+      },
+      {
+        "action": "grafana-oncall-app.user-settings:read"
+      },
+      {
+        "action": "grafana-oncall-app.alert-groups:read"
+      },
+      {
+        "action": "plugins.app:access",
+        "scope": "plugins:grafana-llm-app"
+      },
+      {
+        "action": "plugins.app:access",
+        "scope": "plugins:grafana-incident-app"
+      },
+      {
+        "action": "plugins.app:access",
+        "scope": "plugins:grafana-irm-app"
+      }
+    ]
   }
 }
