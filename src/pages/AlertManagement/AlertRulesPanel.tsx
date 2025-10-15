@@ -25,12 +25,12 @@ interface RawAlertRule {
 interface AlertRuleSummary {
   uid: string;
   title: string;
-  state: string;
-  health: string;
-  folderUID: string;
-  ruleGroup: string;
-  for: string;
-  lastEvaluation: string;
+  state?: string;
+  health?: string;
+  folderUID?: string;
+  ruleGroup?: string;
+  for?: string;
+  lastEvaluation?: string;
   labels: Record<string, string>;
   annotations: Record<string, string>;
 }
@@ -157,12 +157,12 @@ export class AlertRulesPanel extends SceneObjectBase<AlertRulesPanelState> {
         return {
           uid,
           title: item.title ?? item.name ?? '未命名規則',
-          state: item.state ?? 'unknown',
-          health: item.health ?? 'unknown',
-          folderUID: item.folderUID ?? '未指定',
-          ruleGroup: item.ruleGroup ?? '未指定',
-          for: formatDuration(item.for),
-          lastEvaluation: formatLastEvaluation(item.lastEvaluation ?? item.updated),
+          state: item.state,
+          health: item.health,
+          folderUID: normalizeText(item.folderUID),
+          ruleGroup: normalizeText(item.ruleGroup),
+          for: normalizeText(item.for),
+          lastEvaluation: normalizeLastEvaluation(item.lastEvaluation ?? item.updated),
           labels: item.labels ?? {},
           annotations: item.annotations ?? {},
         } satisfies AlertRuleSummary;
@@ -256,6 +256,7 @@ function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>
         <table className={styles.table}>
           <thead>
             <tr>
+              <th>UID</th>
               <th>名稱</th>
               <th>狀態</th>
               <th>健康度</th>
@@ -270,21 +271,22 @@ function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>
           <tbody>
             {state.rules.map((rule) => (
               <tr key={rule.uid}>
+                <td className={styles.uidCell}>{rule.uid}</td>
                 <td>{rule.title}</td>
                 <td>
-                  <Badge text={rule.state.toUpperCase()} color={stateBadgeColor(rule.state)} />
+                  <Badge text={rule.state ?? '未知'} color={stateBadgeColor(rule.state)} />
                 </td>
                 <td>
-                  <Badge text={rule.health.toUpperCase()} color={healthBadgeColor(rule.health)} />
+                  <Badge text={rule.health ?? '未知'} color={healthBadgeColor(rule.health)} />
                 </td>
-                <td>{rule.folderUID}</td>
-                <td>{rule.ruleGroup}</td>
-                <td>{rule.for}</td>
-                <td>{rule.lastEvaluation}</td>
+                <td>{displayValue(rule.folderUID)}</td>
+                <td>{displayValue(rule.ruleGroup)}</td>
+                <td>{formatDuration(rule.for)}</td>
+                <td title={rule.lastEvaluation ?? undefined}>{formatLastEvaluation(rule.lastEvaluation)}</td>
                 <td>
                   <KeyValueList
                     values={rule.labels}
-                    emptyText="無"
+                    emptyText="—"
                     className={styles.keyValueList}
                     itemClassName={styles.keyValuePill}
                   />
@@ -292,7 +294,7 @@ function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>
                 <td>
                   <KeyValueList
                     values={rule.annotations}
-                    emptyText="無"
+                    emptyText="—"
                     className={styles.keyValueList}
                     itemClassName={styles.keyValuePill}
                   />
@@ -312,7 +314,11 @@ function AlertRulesPanelRenderer({ model }: SceneComponentProps<AlertRulesPanel>
   );
 }
 
-function stateBadgeColor(state: string): BadgeColor {
+function stateBadgeColor(state?: string): BadgeColor {
+  if (!state) {
+    return 'darkgrey';
+  }
+
   switch (state.toLowerCase()) {
     case 'ok':
       return 'green';
@@ -329,7 +335,11 @@ function stateBadgeColor(state: string): BadgeColor {
   }
 }
 
-function healthBadgeColor(health: string): BadgeColor {
+function healthBadgeColor(health?: string): BadgeColor {
+  if (!health) {
+    return 'darkgrey';
+  }
+
   switch (health.toLowerCase()) {
     case 'ok':
       return 'green';
@@ -505,7 +515,27 @@ function formatDuration(value?: string): string {
   const trimmed = value?.trim();
 
   if (!trimmed) {
-    return '未設定';
+    return '—';
+  }
+
+  return trimmed;
+}
+
+function normalizeLastEvaluation(value?: string): string | undefined {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed;
+}
+
+function normalizeText(value?: string): string | undefined {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return undefined;
   }
 
   return trimmed;
@@ -513,7 +543,7 @@ function formatDuration(value?: string): string {
 
 function formatLastEvaluation(value?: string): string {
   if (!value) {
-    return '無評估時間';
+    return '—';
   }
 
   const parsed = Date.parse(value);
@@ -523,6 +553,14 @@ function formatLastEvaluation(value?: string): string {
   }
 
   return new Date(parsed).toLocaleString();
+}
+
+function displayValue(value?: string): string {
+  if (!value) {
+    return '—';
+  }
+
+  return value;
 }
 
 const getStyles = (theme: GrafanaTheme2) => ({
@@ -558,6 +596,10 @@ const getStyles = (theme: GrafanaTheme2) => ({
     tbody tr:hover {
       background: ${theme.colors.background.secondary};
     }
+  `,
+  uidCell: css`
+    font-family: ${theme.typography.fontFamilyMonospace};
+    white-space: nowrap;
   `,
   keyValueList: css`
     display: flex;
