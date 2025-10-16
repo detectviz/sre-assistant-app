@@ -50,6 +50,13 @@
     },
     {
       "type": "page",
+      "name": "Grafana MCP Tools",
+      "path": "/a/%PLUGIN_ID%/grafana-mcp-tools",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
       "name": "Page with tabs",
       "path": "/a/%PLUGIN_ID%/page-with-tabs",
       "addToNav": true,
