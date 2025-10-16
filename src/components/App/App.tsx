@@ -12,6 +12,7 @@ import { alertManagementPage } from '../../pages/AlertManagement/alertManagement
 import { withDrilldownPage } from '../../pages/WithDrilldown/withDrilldownPage';
 import { withTabsPage } from '../../pages/WithTabs/withTabsPage';
 import pluginJson from '../../plugin.json';
+import { scenesShowcasePage } from '../../pages/ScenesShowcase/scenesShowcasePage';
 
 function getSceneApp() {
   return new SceneApp({
@@ -22,6 +23,7 @@ function getSceneApp() {
       alertManagementPage,
       withDrilldownPage,
       withTabsPage,
+      scenesShowcasePage,
       helloWorldPage,
     ],
     urlSyncOptions: {

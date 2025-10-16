@@ -10,10 +10,16 @@ export enum ROUTES {
   RealTimeMetrics = 'real-time-metrics',
   LogAnalysis = 'log-analysis',
   AlertManagement = 'alert-management',
+  ScenesShowcase = 'scenes-showcase',
 }
 
 export const DATASOURCE_REF = {
   uid: 'gdev-testdata',
   type: 'testdata',
+};
+
+export const PROMETHEUS_DATASOURCE_REF = {
+  uid: 'gdev-prometheus',
+  type: 'prometheus',
 };
 
