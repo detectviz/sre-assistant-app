@@ -46,14 +46,12 @@ import {
   PanelProps,
   TestDataSourceResponse,
 } from '@grafana/data';
-import { SceneBaseliner, SceneChangepointDetector, SceneOutlierDetector, MLDemoDS } from '@grafana/scenes-ml';
+import { SceneBaseliner, SceneChangepointDetector, SceneOutlierDetector } from '@grafana/scenes-ml';
 import { DataSourceSelectControl } from '../../components/DataSourceControls/DataSourceSelectControl';
 
 const CUSTOM_VIZ_PLUGIN_ID = 'sre-assistant-scenes-showcase-custom-viz';
 const RUNTIME_DS_TYPE = 'sre-assistant-scenes-runtime';
 const RUNTIME_DS_UID = 'sre-assistant-scenes-runtime';
-const ML_DEMO_DS_TYPE = 'ml-test';
-const ML_DEMO_DS_UID = 'sre-assistant-ml-demo';
 
 const DRILLDOWN_METRICS = [
   'prometheus_http_requests_total',
@@ -168,7 +166,6 @@ function ensureShowcaseRegistrations() {
   }
 
   sceneUtils.registerRuntimeDataSource({ dataSource: new ShowcaseRuntimeDataSource(RUNTIME_DS_TYPE, RUNTIME_DS_UID) });
-  sceneUtils.registerRuntimeDataSource({ dataSource: new MLDemoDS(ML_DEMO_DS_TYPE, ML_DEMO_DS_UID) });
   sceneUtils.registerRuntimePanelPlugin({ pluginId: CUSTOM_VIZ_PLUGIN_ID, plugin: createCustomVizPlugin() });
 
   showcaseRegistrationsCompleted = true;
@@ -916,19 +913,65 @@ export function buildInteractivityScene(): EmbeddedScene {
 export function buildMachineLearningScene(): EmbeddedScene {
   ensureShowcaseRegistrations();
 
+  const timeRange = new SceneTimeRange({ from: 'now-12h', to: 'now' });
+
+  const forecastQueries = () => [
+    {
+      refId: 'A',
+      expr:
+        'sum(rate(prometheus_http_request_duration_seconds_sum{job="prometheus"}[5m])) / sum(rate(prometheus_http_request_duration_seconds_count{job="prometheus"}[5m]))',
+    },
+  ];
   const forecastRunner = new SceneQueryRunner({
-    queries: [{ refId: 'A', datasource: { uid: ML_DEMO_DS_UID, type: ML_DEMO_DS_TYPE }, type: 'forecasts' }],
+    queries: [],
+    $timeRange: timeRange,
   });
 
+  const outlierQueries = () => [
+    {
+      refId: 'B',
+      expr: 'sum by (instance)(rate(prometheus_http_requests_total{job="prometheus"}[5m]))',
+    },
+  ];
   const outlierRunner = new SceneQueryRunner({
-    queries: [{ refId: 'B', datasource: { uid: ML_DEMO_DS_UID, type: ML_DEMO_DS_TYPE }, type: 'outliers' }],
+    queries: [],
+    $timeRange: timeRange,
   });
 
+  const changepointQueries = () => [
+    {
+      refId: 'C',
+      expr:
+        'sum(rate(prometheus_http_request_duration_seconds_sum{job="prometheus"}[5m])) / sum(rate(prometheus_http_request_duration_seconds_count{job="prometheus"}[5m]))',
+    },
+  ];
   const changepointRunner = new SceneQueryRunner({
-    queries: [{ refId: 'C', datasource: { uid: ML_DEMO_DS_UID, type: ML_DEMO_DS_TYPE }, type: 'changepoints' }],
+    queries: [],
+    $timeRange: timeRange,
+  });
+
+  const datasourceSelector = new DataSourceSelectControl({
+    pluginId: 'prometheus',
+    label: 'Prometheus',
+    onChange: (ref: DataSourceRef | null) => {
+      if (!ref || !ref.uid) {
+        resetRunnerData(forecastRunner);
+        resetRunnerData(outlierRunner);
+        resetRunnerData(changepointRunner);
+        return;
+      }
+
+      const targetRef = { ...ref, uid: ref.uid };
+
+      runRunnerWithDatasource(forecastRunner, targetRef, forecastQueries());
+      runRunnerWithDatasource(outlierRunner, targetRef, outlierQueries());
+      runRunnerWithDatasource(changepointRunner, targetRef, changepointQueries());
+    },
   });
 
   return new EmbeddedScene({
+    $timeRange: timeRange,
+    controls: [datasourceSelector, new SceneControlsSpacer(), new SceneTimePicker({ isOnCanvas: true })],
     body: new SceneFlexLayout({
       direction: 'column',
       children: [
@@ -937,7 +980,7 @@ export function buildMachineLearningScene(): EmbeddedScene {
           body: new DescriptionBlock({
             title: 'Scenes ML 能力總覽',
             detail:
-              'Scenes ML 套件提供基線預測、離群值與變更點偵測。以下範例透過 MLDemoDS 提供的資料模擬常見監控情境。',
+              'Scenes ML 套件提供基線預測、離群值與變更點偵測。此範例使用使用者挑選的 Prometheus 指標作為輸入，直接在實際序列上疊加 ML 行為。',
           }),
         }),
         createDescribedFlexItem({
