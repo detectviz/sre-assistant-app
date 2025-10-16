@@ -209,20 +209,20 @@ const config = async (env: Env): Promise<Configuration> => {
       }),
       ...(env.development
         ? [
-            new LiveReloadPlugin(),
-            new ForkTsCheckerWebpackPlugin({
-              async: Boolean(env.development),
-              issue: {
-                include: [{ file: '**/*.{ts,tsx}' }],
-              },
-              typescript: { configFile: path.join(process.cwd(), 'tsconfig.json') },
-            }),
-            new ESLintPlugin({
-              extensions: ['.ts', '.tsx'],
-              lintDirtyModulesOnly: Boolean(env.development), // don't lint on start, only lint changed files
-              failOnError: Boolean(env.production),
-            }),
-          ]
+          new LiveReloadPlugin(),
+          new ForkTsCheckerWebpackPlugin({
+            async: Boolean(env.development),
+            issue: {
+              include: [{ file: '**/*.{ts,tsx}' }],
+            },
+            typescript: { configFile: path.join(process.cwd(), 'tsconfig.json') },
+          }),
+          new ESLintPlugin({
+            extensions: ['.ts', '.tsx'],
+            lintDirtyModulesOnly: Boolean(env.development), // don't lint on start, only lint changed files
+            failOnError: Boolean(env.production),
+          }),
+        ]
         : []),
     ],
 
@@ -230,6 +230,23 @@ const config = async (env: Env): Promise<Configuration> => {
       extensions: ['.js', '.jsx', '.ts', '.tsx'],
       // handle resolving "rootDir" paths
       modules: [path.resolve(process.cwd(), 'src'), 'node_modules'],
+      alias: {
+        'grafana-public-path': 'node_modules/grafana-public-path.js',
+      },
+      fallback: {
+        'fs': false,
+        'fs/promises': false,
+        'path': false,
+        'crypto': false,
+        'stream': false,
+        'util': false,
+        'url': false,
+        'querystring': false,
+        'http': false,
+        'https': false,
+        'zlib': false,
+        'os': false,
+      },
       unsafeCache: true,
     },
   };

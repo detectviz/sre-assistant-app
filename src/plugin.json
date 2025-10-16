@@ -6,7 +6,9 @@
   "backend": true,
   "executable": "gpx_assistant",
   "info": {
-    "keywords": ["app"],
+    "keywords": [
+      "app"
+    ],
     "description": "",
     "author": {
       "name": "Sre"
@@ -45,6 +47,20 @@
       "type": "page",
       "name": "告警管理",
       "path": "/a/%PLUGIN_ID%/alert-management",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
+      "name": "Grafana MCP Tools",
+      "path": "/a/%PLUGIN_ID%/grafana-mcp-tools",
+      "addToNav": true,
+      "defaultNav": false
+    },
+    {
+      "type": "page",
+      "name": "Scenes Showcase",
+      "path": "/a/%PLUGIN_ID%/scenes-showcase",
       "addToNav": true,
       "defaultNav": false
     },

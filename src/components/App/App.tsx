@@ -11,6 +11,8 @@ import { logAnalysisPage } from '../../pages/LogAnalysis/logAnalysisPage';
 import { alertManagementPage } from '../../pages/AlertManagement/alertManagementPage';
 import { withDrilldownPage } from '../../pages/WithDrilldown/withDrilldownPage';
 import { withTabsPage } from '../../pages/WithTabs/withTabsPage';
+import { grafanaMcpToolsPage } from '../../pages/GrafanaMCPTools/grafanaMcpToolsPage';
+import { scenesShowcasePage } from '../../pages/ScenesShowcase/scenesShowcasePage';
 import pluginJson from '../../plugin.json';
 
 function getSceneApp() {
@@ -20,6 +22,8 @@ function getSceneApp() {
       realTimeMetricsPage,
       logAnalysisPage,
       alertManagementPage,
+      grafanaMcpToolsPage,
+      scenesShowcasePage,
       withDrilldownPage,
       withTabsPage,
       helloWorldPage,

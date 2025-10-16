@@ -10,6 +10,8 @@ export enum ROUTES {
   RealTimeMetrics = 'real-time-metrics',
   LogAnalysis = 'log-analysis',
   AlertManagement = 'alert-management',
+  GrafanaMcpTools = 'grafana-mcp-tools',
+  ScenesShowcase = 'scenes-showcase',
 }
 
 export const DATASOURCE_REF = {
