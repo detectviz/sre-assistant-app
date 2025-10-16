@@ -371,17 +371,26 @@ function DescriptionBlockRenderer({ model }: SceneComponentProps<DescriptionBloc
   return (
     <div
       style={{
-        padding: '16px',
-        borderRadius: '6px',
+        padding: '10px 12px',
+        borderRadius: '4px',
         border: '1px solid var(--border-weak)',
         background: 'var(--panel-bg)',
-        boxShadow: 'var(--shadow-median)',
       }}
     >
-      <h3 style={{ marginTop: 0, marginBottom: '8px' }}>{title}</h3>
-      <p style={{ margin: 0, lineHeight: 1.6 }}>{detail}</p>
+      <h5
+        style={{
+          margin: 0,
+          marginBottom: '6px',
+          fontSize: '13px',
+          fontWeight: 600,
+          letterSpacing: '0.2px',
+        }}
+      >
+        {title}
+      </h5>
+      <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5 }}>{detail}</p>
       {docsLink && (
-        <p style={{ margin: '8px 0 0' }}>
+        <p style={{ margin: '6px 0 0', fontSize: '12px' }}>
           <a href={docsLink} target="_blank" rel="noreferrer">
             參考官方文件
           </a>
@@ -409,8 +418,8 @@ interface DescribedFlexItemOptions {
 function createDescribedFlexItem({
   description,
   content,
-  minHeight = 320,
-  descriptionMinHeight = 112,
+  minHeight = 300,
+  descriptionMinHeight = 72,
   contentMinHeight,
 }: DescribedFlexItemOptions): SceneFlexItem {
   const effectiveContentMinHeight = contentMinHeight ?? Math.max(minHeight - descriptionMinHeight, 160);
@@ -545,14 +554,6 @@ export function buildCoreAndLayoutsScene(): EmbeddedScene {
     body: new SceneFlexLayout({
       direction: 'column',
       children: [
-        new SceneFlexItem({
-          minHeight: 160,
-          body: new DescriptionBlock({
-            title: 'EmbeddedScene 與 SceneFlexLayout',
-            detail:
-              '根容器使用 EmbeddedScene 並結合 SceneFlexLayout 管理整體頁面配置，同時示範 CursorSync 行為與時間控制元件的擴充能力。',
-          }),
-        }),
         createDescribedFlexItem({
           description: {
             title: 'SplitLayout 可調整分割視圖',
@@ -722,14 +723,6 @@ export function buildDataAndVisualizationScene(basePath: string): EmbeddedScene 
     body: new SceneFlexLayout({
       direction: 'column',
       children: [
-        new SceneFlexItem({
-          minHeight: 160,
-          body: new DescriptionBlock({
-            title: '資料管線與視覺化概觀',
-            detail:
-              '此分頁聚焦 SceneQueryRunner、SceneDataTransformer 以及自訂 RuntimeDataSource，展示如何從 Prometheus 與自訂資料混合組裝視覺化。',
-          }),
-        }),
         createDescribedFlexItem({
           description: {
             title: 'SceneQueryRunner 與 PanelBuilders.timeseries',
@@ -887,14 +880,6 @@ export function buildInteractivityScene(): EmbeddedScene {
     body: new SceneFlexLayout({
       direction: 'column',
       children: [
-        new SceneFlexItem({
-          minHeight: 160,
-          body: new DescriptionBlock({
-            title: '變數、臨時篩選與 URL 同步',
-            detail:
-              'SceneVariableSet 集中管理 DataSourceVariable、QueryVariable 與 AdHocFiltersVariable，搭配 URL 同步讓互動狀態可分享。',
-          }),
-        }),
         createDescribedFlexItem({
           description: {
             title: 'VariableValueControl 與動態查詢',
@@ -922,11 +907,38 @@ export function buildMachineLearningScene(): EmbeddedScene {
 
   const timeRange = new SceneTimeRange({ from: 'now-12h', to: 'now' });
 
+  const jobVariable = new QueryVariable({
+    name: 'mlJob',
+    label: '服務工作',
+    datasource: null,
+    query: {
+      refId: 'MLJob',
+      query: 'label_values(up, job)',
+    },
+    value: 'prometheus',
+    sort: VariableSort.alphabeticalAsc,
+  });
+
+  const metricVariable = new QueryVariable({
+    name: 'mlMetricName',
+    label: '分析指標',
+    datasource: null,
+    query: {
+      refId: 'MLMetric',
+      query: 'label_values({job="$mlJob"}, __name__)',
+    },
+    value: 'prometheus_http_requests_total',
+    sort: VariableSort.alphabeticalAsc,
+  });
+
+  const variableSet = new SceneVariableSet({
+    variables: [jobVariable, metricVariable],
+  });
+
   const forecastQueries = () => [
     {
       refId: 'A',
-      expr:
-        'sum(rate(prometheus_http_request_duration_seconds_sum{job="prometheus"}[5m])) / sum(rate(prometheus_http_request_duration_seconds_count{job="prometheus"}[5m]))',
+      expr: 'avg(rate(${mlMetricName:raw}{job=~"$mlJob"}[5m]))',
     },
   ];
   const forecastRunner = new SceneQueryRunner({
@@ -937,7 +949,7 @@ export function buildMachineLearningScene(): EmbeddedScene {
   const outlierQueries = () => [
     {
       refId: 'B',
-      expr: 'sum by (instance)(rate(prometheus_http_requests_total{job="prometheus"}[5m]))',
+      expr: 'sum by (instance)(rate(${mlMetricName:raw}{job=~"$mlJob"}[5m]))',
     },
   ];
   const outlierRunner = new SceneQueryRunner({
@@ -948,13 +960,48 @@ export function buildMachineLearningScene(): EmbeddedScene {
   const changepointQueries = () => [
     {
       refId: 'C',
-      expr:
-        'sum(rate(prometheus_http_request_duration_seconds_sum{job="prometheus"}[5m])) / sum(rate(prometheus_http_request_duration_seconds_count{job="prometheus"}[5m]))',
+      expr: 'avg(rate(${mlMetricName:raw}{job=~"$mlJob"}[5m]))',
     },
   ];
   const changepointRunner = new SceneQueryRunner({
     queries: [],
     $timeRange: timeRange,
+  });
+
+  const mlRunners = [forecastRunner, outlierRunner, changepointRunner];
+  let currentDatasource: (DataSourceRef & { uid: string }) | null = null;
+
+  const rerunMlRunners = () => {
+    if (!currentDatasource) {
+      return;
+    }
+
+    mlRunners.forEach((runner) => runner.runQueries());
+  };
+
+  jobVariable.addActivationHandler(() => {
+    const sub = jobVariable.subscribeToState(() => {
+      if (!currentDatasource) {
+        return;
+      }
+
+      metricVariable.refreshOptions();
+      rerunMlRunners();
+    });
+
+    return () => sub.unsubscribe();
+  });
+
+  metricVariable.addActivationHandler(() => {
+    const sub = metricVariable.subscribeToState(() => {
+      if (!currentDatasource) {
+        return;
+      }
+
+      rerunMlRunners();
+    });
+
+    return () => sub.unsubscribe();
   });
 
   const datasourceSelector = new DataSourceSelectControl({
@@ -965,11 +1012,19 @@ export function buildMachineLearningScene(): EmbeddedScene {
         resetRunnerData(forecastRunner);
         resetRunnerData(outlierRunner);
         resetRunnerData(changepointRunner);
+        currentDatasource = null;
+        jobVariable.setState({ datasource: null });
+        metricVariable.setState({ datasource: null });
         return;
       }
 
       const targetRef = { ...ref, uid: ref.uid };
 
+      currentDatasource = targetRef;
+      jobVariable.setState({ datasource: targetRef });
+      jobVariable.refreshOptions();
+      metricVariable.setState({ datasource: targetRef });
+      metricVariable.refreshOptions();
       runRunnerWithDatasource(forecastRunner, targetRef, forecastQueries());
       runRunnerWithDatasource(outlierRunner, targetRef, outlierQueries());
       runRunnerWithDatasource(changepointRunner, targetRef, changepointQueries());
@@ -978,18 +1033,17 @@ export function buildMachineLearningScene(): EmbeddedScene {
 
   return new EmbeddedScene({
     $timeRange: timeRange,
-    controls: [datasourceSelector, new SceneControlsSpacer(), new SceneTimePicker({ isOnCanvas: true })],
+    $variables: variableSet,
+    controls: [
+      datasourceSelector,
+      new VariableValueControl({ variableName: 'mlJob' }),
+      new VariableValueControl({ variableName: 'mlMetricName' }),
+      new SceneControlsSpacer(),
+      new SceneTimePicker({ isOnCanvas: true }),
+    ],
     body: new SceneFlexLayout({
       direction: 'column',
       children: [
-        new SceneFlexItem({
-          minHeight: 160,
-          body: new DescriptionBlock({
-            title: 'Scenes ML 能力總覽',
-            detail:
-              'Scenes ML 套件提供基線預測、離群值與變更點偵測。此範例使用使用者挑選的 Prometheus 指標作為輸入，直接在實際序列上疊加 ML 行為。',
-          }),
-        }),
         createDescribedFlexItem({
           description: {
             title: 'SceneBaseliner 預測與容忍區間',
