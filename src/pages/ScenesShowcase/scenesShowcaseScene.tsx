@@ -419,7 +419,7 @@ function createDescribedFlexItem({
   description,
   content,
   minHeight = 300,
-  descriptionMinHeight = 72,
+  descriptionMinHeight = 60,
   contentMinHeight,
 }: DescribedFlexItemOptions): SceneFlexItem {
   const effectiveContentMinHeight = contentMinHeight ?? Math.max(minHeight - descriptionMinHeight, 160);
@@ -431,6 +431,7 @@ function createDescribedFlexItem({
       children: [
         new SceneFlexItem({
           minHeight: descriptionMinHeight,
+          ySizing: 'content',
           body: new DescriptionBlock(description),
         }),
         new SceneFlexItem({
