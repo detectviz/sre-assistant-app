@@ -33,7 +33,7 @@ import {
   behaviors,
   sceneUtils,
 } from '@grafana/scenes';
-import { DashboardCursorSync } from '@grafana/schema';
+import { DashboardCursorSync, DataSourceRef } from '@grafana/schema';
 import {
   DataFrame,
   DataQuery,
@@ -47,7 +47,7 @@ import {
   TestDataSourceResponse,
 } from '@grafana/data';
 import { SceneBaseliner, SceneChangepointDetector, SceneOutlierDetector, MLDemoDS } from '@grafana/scenes-ml';
-import { PROMETHEUS_DATASOURCE_REF } from '../../constants';
+import { DataSourceSelectControl } from '../../components/DataSourceControls/DataSourceSelectControl';
 
 const CUSTOM_VIZ_PLUGIN_ID = 'sre-assistant-scenes-showcase-custom-viz';
 const RUNTIME_DS_TYPE = 'sre-assistant-scenes-runtime';
@@ -174,6 +174,26 @@ function ensureShowcaseRegistrations() {
   showcaseRegistrationsCompleted = true;
 }
 
+/**
+ * 當資料來源被清除時，重置查詢執行器的狀態並停止進行中的請求。
+ */
+function resetRunnerData(runner: SceneQueryRunner) {
+  runner.cancelQuery();
+  runner.setState({ datasource: undefined, queries: [] });
+}
+
+/**
+ * 指定實際資料來源後，更新查詢定義並立即執行查詢。
+ */
+function runRunnerWithDatasource(
+  runner: SceneQueryRunner,
+  datasource: DataSourceRef & { uid: string },
+  queries: SceneDataQuery[]
+) {
+  runner.setState({ datasource, queries });
+  runner.runQueries();
+}
+
 interface LatencyThresholdState extends SceneObjectState {
   threshold: number;
 }
@@ -184,22 +204,40 @@ class LatencyThresholdController extends SceneObjectBase<LatencyThresholdState> 
   protected _urlSync = new SceneObjectUrlSyncConfig(this, { keys: ['threshold'] });
 
   private readonly baseQueries: SceneDataQuery[];
+  private currentDatasource: DataSourceRef | null = null;
 
   constructor(private readonly runner: SceneQueryRunner, baseQueries: SceneDataQuery[]) {
     super({ threshold: 300 });
     this.baseQueries = baseQueries.map((query) => ({ ...query }));
 
     this.addActivationHandler(() => {
-      this.runner.setState({ queries: this.buildQueries(this.state.threshold) });
-      this.runner.runQueries();
-
       const sub = this.subscribeToState((state) => {
+        if (!this.currentDatasource) {
+          return;
+        }
+
         this.runner.setState({ queries: this.buildQueries(state.threshold) });
         this.runner.runQueries();
       });
 
       return () => sub.unsubscribe();
     });
+  }
+
+  /**
+   * 套用使用者選擇的資料來源並執行查詢，若未選擇則重置狀態。
+   */
+  applyDatasource(ref: DataSourceRef | null) {
+    this.currentDatasource = ref;
+
+    if (!ref || !ref.uid) {
+      resetRunnerData(this.runner);
+      return;
+    }
+
+    const targetRef = { ...ref, uid: ref.uid };
+
+    runRunnerWithDatasource(this.runner, targetRef, this.buildQueries(this.state.threshold));
   }
 
   getUrlState(): SceneObjectUrlValues {
@@ -405,80 +443,105 @@ export function buildCoreAndLayoutsScene(): EmbeddedScene {
 
   const timeRange = new SceneTimeRange({ from: 'now-6h', to: 'now' });
 
+  const httpRequestQueries = () => [
+    {
+      refId: 'A',
+      expr: 'sum by (instance)(rate(prometheus_http_requests_total{job="prometheus"}[5m]))',
+    },
+  ];
   const httpRequests = new SceneQueryRunner({
-    datasource: PROMETHEUS_DATASOURCE_REF,
-    queries: [
-      {
-        refId: 'A',
-        expr: 'sum by (instance)(rate(prometheus_http_requests_total{job="prometheus"}[5m]))',
-      },
-    ],
+    queries: [],
     $timeRange: timeRange,
     maxDataPoints: 300,
   });
 
+  const statusBreakdownQueries = () => [
+    {
+      refId: 'B',
+      expr: 'topk(5, sum by (code)(rate(prometheus_http_requests_total{job="prometheus"}[5m])))',
+    },
+  ];
   const statusBreakdown = new SceneQueryRunner({
-    datasource: PROMETHEUS_DATASOURCE_REF,
-    queries: [
-      {
-        refId: 'B',
-        expr: 'topk(5, sum by (code)(rate(prometheus_http_requests_total{job="prometheus"}[5m])))',
-      },
-    ],
+    queries: [],
     $timeRange: timeRange,
   });
 
+  const statusTableQueries = () => [
+    {
+      refId: 'C',
+      expr: 'sum by (handler)(rate(prometheus_http_requests_total{job="prometheus"}[5m]))',
+      format: 'table',
+      instant: true,
+    },
+  ];
   const statusTable = new SceneQueryRunner({
-    datasource: PROMETHEUS_DATASOURCE_REF,
-    queries: [
-      {
-        refId: 'C',
-        expr: 'sum by (handler)(rate(prometheus_http_requests_total{job="prometheus"}[5m]))',
-        format: 'table',
-        instant: true,
-      },
-    ],
+    queries: [],
   });
 
+  const cpuUsageQueries = () => [
+    {
+      refId: 'D',
+      expr: 'avg by (instance)(rate(process_cpu_seconds_total{job="prometheus"}[5m]))',
+    },
+  ];
   const cpuUsage = new SceneQueryRunner({
-    datasource: PROMETHEUS_DATASOURCE_REF,
-    queries: [
-      {
-        refId: 'D',
-        expr: 'avg by (instance)(rate(process_cpu_seconds_total{job="prometheus"}[5m]))',
-      },
-    ],
+    queries: [],
     $timeRange: timeRange,
   });
 
-  const latencyQueries = [
+  const latencyQueries: SceneDataQuery[] = [
     {
       refId: 'A',
-      datasource: PROMETHEUS_DATASOURCE_REF,
       expr: 'histogram_quantile(0.9, sum by (le)(rate(prometheus_http_request_duration_seconds_bucket{job="prometheus"}[5m]))) * 1000',
       legendFormat: 'P90 延遲 (毫秒)',
     },
     {
       refId: 'B',
-      datasource: PROMETHEUS_DATASOURCE_REF,
       expr: 'vector(300)',
       legendFormat: '目標閾值 (毫秒)',
     },
   ];
 
   const latencyRunner = new SceneQueryRunner({
-    datasource: PROMETHEUS_DATASOURCE_REF,
-    queries: latencyQueries,
+    queries: [],
     $timeRange: timeRange,
   });
 
   const latencyController = new LatencyThresholdController(latencyRunner, latencyQueries);
   const statusIndicator = new QueryStatusIndicator(httpRequests);
 
+  const prometheusRunners = [
+    { runner: httpRequests, getQueries: httpRequestQueries },
+    { runner: statusBreakdown, getQueries: statusBreakdownQueries },
+    { runner: statusTable, getQueries: statusTableQueries },
+    { runner: cpuUsage, getQueries: cpuUsageQueries },
+  ];
+
+  const datasourceSelector = new DataSourceSelectControl({
+    pluginId: 'prometheus',
+    label: 'Prometheus',
+    onChange: (ref: DataSourceRef | null) => {
+      if (!ref || !ref.uid) {
+        prometheusRunners.forEach(({ runner }) => resetRunnerData(runner));
+        latencyController.applyDatasource(null);
+        return;
+      }
+
+      const targetRef = { ...ref, uid: ref.uid };
+
+      prometheusRunners.forEach(({ runner, getQueries }) => {
+        runRunnerWithDatasource(runner, targetRef, getQueries());
+      });
+
+      latencyController.applyDatasource(targetRef);
+    },
+  });
+
   return new EmbeddedScene({
     $timeRange: timeRange,
     $behaviors: [new behaviors.CursorSync({ key: 'scenes-showcase-cursor', sync: DashboardCursorSync.Tooltip })],
     controls: [
+      datasourceSelector,
       latencyController,
       new SceneControlsSpacer(),
       new SceneTimePicker({ isOnCanvas: true }),
@@ -590,27 +653,27 @@ export function buildDataAndVisualizationScene(basePath: string): EmbeddedScene 
 
   const timeRange = new SceneTimeRange({ from: 'now-1h', to: 'now' });
 
+  const latencyTrendQueries = () => [
+    {
+      refId: 'A',
+      expr: 'sum by (handler)(rate(prometheus_http_request_duration_seconds_sum{job="prometheus"}[5m])) * 1000',
+    },
+  ];
   const latencyTrendRunner = new SceneQueryRunner({
-    datasource: PROMETHEUS_DATASOURCE_REF,
-    queries: [
-      {
-        refId: 'A',
-        expr: 'sum by (handler)(rate(prometheus_http_request_duration_seconds_sum{job="prometheus"}[5m])) * 1000',
-      },
-    ],
+    queries: [],
     $timeRange: timeRange,
   });
 
+  const rawLatencyTableQueries = () => [
+    {
+      refId: 'B',
+      expr: 'sort_desc(avg by(handler) (rate(prometheus_http_request_duration_seconds_sum{job="prometheus"}[5m]) * 1e3))',
+      format: 'table',
+      instant: true,
+    },
+  ];
   const rawLatencyTable = new SceneQueryRunner({
-    datasource: PROMETHEUS_DATASOURCE_REF,
-    queries: [
-      {
-        refId: 'B',
-        expr: 'sort_desc(avg by(handler) (rate(prometheus_http_request_duration_seconds_sum{job="prometheus"}[5m]) * 1e3))',
-        format: 'table',
-        instant: true,
-      },
-    ],
+    queries: [],
   });
 
   const transformedLatency = new SceneDataTransformer({
@@ -640,6 +703,23 @@ export function buildDataAndVisualizationScene(basePath: string): EmbeddedScene 
   const runtimeSummaryRunner = new SceneQueryRunner({
     datasource: { uid: RUNTIME_DS_UID, type: RUNTIME_DS_TYPE },
     queries: [{ refId: 'E', scenario: 'summary' }],
+  });
+
+  const datasourceSelector = new DataSourceSelectControl({
+    pluginId: 'prometheus',
+    label: 'Prometheus',
+    onChange: (ref: DataSourceRef | null) => {
+      if (!ref || !ref.uid) {
+        resetRunnerData(latencyTrendRunner);
+        resetRunnerData(rawLatencyTable);
+        return;
+      }
+
+      const targetRef = { ...ref, uid: ref.uid };
+
+      runRunnerWithDatasource(latencyTrendRunner, targetRef, latencyTrendQueries());
+      runRunnerWithDatasource(rawLatencyTable, targetRef, rawLatencyTableQueries());
+    },
   });
 
   return new EmbeddedScene({
@@ -714,6 +794,7 @@ export function buildDataAndVisualizationScene(basePath: string): EmbeddedScene 
         }),
       ],
     }),
+    controls: [datasourceSelector, new SceneControlsSpacer(), new SceneTimePicker({ isOnCanvas: true })],
   });
 }
 
@@ -727,13 +808,12 @@ export function buildInteractivityScene(): EmbeddedScene {
     label: 'Prometheus 資料源',
     pluginId: 'prometheus',
     regex: '',
-    value: PROMETHEUS_DATASOURCE_REF.uid,
   });
 
   const jobVariable = new QueryVariable({
     name: 'job',
     label: '服務工作',
-    datasource: PROMETHEUS_DATASOURCE_REF,
+    datasource: null,
     query: {
       refId: 'Job',
       query: 'label_values(up, job)',
@@ -757,7 +837,7 @@ export function buildInteractivityScene(): EmbeddedScene {
   const adhocVariable = new AdHocFiltersVariable({
     name: 'Filters',
     label: '臨時篩選',
-    datasource: PROMETHEUS_DATASOURCE_REF,
+    datasource: null,
     filters: [],
     applyMode: 'manual',
   });
@@ -775,6 +855,27 @@ export function buildInteractivityScene(): EmbeddedScene {
       },
     ],
     $timeRange: timeRange,
+  });
+
+  const datasourceSelector = new DataSourceSelectControl({
+    pluginId: 'prometheus',
+    label: 'Prometheus',
+    onChange: (ref: DataSourceRef | null) => {
+      if (!ref || !ref.uid) {
+        adhocVariable.setState({ datasource: null, filters: [] });
+        jobVariable.setState({ datasource: null });
+        interactiveRunner.cancelQuery();
+        return;
+      }
+
+      const targetRef = { ...ref, uid: ref.uid };
+
+      dataSourceVariable.changeValueTo(targetRef.uid, targetRef.uid, true);
+      jobVariable.setState({ datasource: targetRef });
+      jobVariable.refreshOptions();
+      adhocVariable.setState({ datasource: targetRef, filters: [] });
+      interactiveRunner.runQueries();
+    },
   });
 
   return new EmbeddedScene({
@@ -803,7 +904,12 @@ export function buildInteractivityScene(): EmbeddedScene {
         }),
       ],
     }),
-    controls: [new VariableValueSelectors({}), new SceneControlsSpacer(), new SceneTimePicker({ isOnCanvas: true })],
+    controls: [
+      datasourceSelector,
+      new VariableValueSelectors({}),
+      new SceneControlsSpacer(),
+      new SceneTimePicker({ isOnCanvas: true }),
+    ],
   });
 }
 
@@ -890,43 +996,62 @@ export function buildRuntimeMetricDrilldownScene(metricId: string): EmbeddedScen
 
   const timeRange = new SceneTimeRange({ from: 'now-12h', to: 'now' });
 
+  const detailQueries = () => [
+    {
+      refId: 'A',
+      expr: `sum by (instance)(rate(${metricId}{job="prometheus"}[5m]))`,
+    },
+  ];
   const detailRunner = new SceneQueryRunner({
-    datasource: PROMETHEUS_DATASOURCE_REF,
-    queries: [
-      {
-        refId: 'A',
-        expr: `sum by (instance)(rate(${metricId}{job="prometheus"}[5m]))`,
-      },
-    ],
+    queries: [],
     $timeRange: timeRange,
   });
 
+  const totalQueries = () => [
+    {
+      refId: 'B',
+      expr: `sum(rate(${metricId}{job="prometheus"}[5m]))`,
+    },
+  ];
   const totalRunner = new SceneQueryRunner({
-    datasource: PROMETHEUS_DATASOURCE_REF,
-    queries: [
-      {
-        refId: 'B',
-        expr: `sum(rate(${metricId}{job="prometheus"}[5m]))`,
-      },
-    ],
+    queries: [],
     $timeRange: timeRange,
   });
 
+  const labelBreakdownQueries = () => [
+    {
+      refId: 'C',
+      expr: `sum by (job, instance)(rate(${metricId}{job="prometheus"}[5m]))`,
+      format: 'table',
+      instant: true,
+    },
+  ];
   const labelBreakdownRunner = new SceneQueryRunner({
-    datasource: PROMETHEUS_DATASOURCE_REF,
-    queries: [
-      {
-        refId: 'C',
-        expr: `sum by (job, instance)(rate(${metricId}{job="prometheus"}[5m]))`,
-        format: 'table',
-        instant: true,
-      },
-    ],
+    queries: [],
+  });
+
+  const datasourceSelector = new DataSourceSelectControl({
+    pluginId: 'prometheus',
+    label: 'Prometheus',
+    onChange: (ref: DataSourceRef | null) => {
+      if (!ref || !ref.uid) {
+        resetRunnerData(detailRunner);
+        resetRunnerData(totalRunner);
+        resetRunnerData(labelBreakdownRunner);
+        return;
+      }
+
+      const targetRef = { ...ref, uid: ref.uid };
+
+      runRunnerWithDatasource(detailRunner, targetRef, detailQueries());
+      runRunnerWithDatasource(totalRunner, targetRef, totalQueries());
+      runRunnerWithDatasource(labelBreakdownRunner, targetRef, labelBreakdownQueries());
+    },
   });
 
   return new EmbeddedScene({
     $timeRange: timeRange,
-    controls: [new SceneTimePicker({ isOnCanvas: true })],
+    controls: [datasourceSelector, new SceneControlsSpacer(), new SceneTimePicker({ isOnCanvas: true })],
     body: new SceneFlexLayout({
       direction: 'column',
       children: [
