@@ -1,20 +1,10 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useCallback } from 'react';
 import { css } from '@emotion/css';
 import { SceneObjectBase, type SceneComponentProps, type SceneObjectState } from '@grafana/scenes';
 import { mcp } from '@grafana/llm';
 import type { Client as MCPClient } from '@modelcontextprotocol/sdk/client/index';
 import type { SelectableValue } from '@grafana/data';
-import {
-  Alert,
-  Button,
-  Field,
-  HorizontalGroup,
-  Select,
-  Spinner,
-  Stack,
-  TextArea,
-  useStyles2,
-} from '@grafana/ui';
+import { Alert, Button, Field, HorizontalGroup, Select, Spinner, TextArea, useStyles2 } from '@grafana/ui';
 import { buildToolSelectOptions, findToolByName } from './mcpToolsCatalog';
 
 interface GrafanaMcpToolsPanelState extends SceneObjectState {
@@ -177,79 +167,114 @@ function GrafanaMcpToolsPanelRenderer({ model }: SceneComponentProps<GrafanaMcpT
 
   const executeDisabled = !enabled || !client || !state.selectedTool || state.loading;
 
+  const handleArgumentKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault();
+        model.executeSelectedTool();
+      }
+    },
+    [model]
+  );
+
+  const renderStatusAlerts = () => {
+    if (state.error) {
+      return (
+        <Alert title="執行失敗" severity="error">
+          {state.error}
+        </Alert>
+      );
+    }
+
+    if (state.connectionMessage) {
+      return (
+        <Alert title="MCP 狀態" severity={state.connectionSeverity ?? 'info'}>
+          {state.connectionMessage}
+        </Alert>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div className={styles.container}>
-      <Stack gap={2} direction="column">
-        <Field
-          label="選擇 MCP 工具"
-          description={
-            selectedOption?.description ?? '請選擇要調用的 Grafana MCP 工具，介面會顯示對應的參數提示。'
-          }
-        >
-          <Select
-            placeholder="選擇工具..."
-            options={options}
-            value={selectedOption}
-            onChange={(value) => model.selectTool(value?.value)}
-            isClearable={true}
-          />
-        </Field>
+      <div className={styles.content}>
+        <div className={styles.leftPane}>
+          <Field
+            label="選擇 MCP 工具"
+            description={
+              selectedOption?.description ?? '請選擇要調用的 Grafana MCP 工具，介面會顯示對應的參數提示。'
+            }
+          >
+            <Select
+              placeholder="選擇工具..."
+              options={options}
+              value={selectedOption}
+              onChange={(value) => model.selectTool(value?.value)}
+              isClearable={true}
+            />
+          </Field>
 
-        {selectedTool && (
-          <Alert title="參數提示" severity="info">
-            <div>{selectedTool.parameterNote}</div>
-            {selectedTool.exampleArgs && (
-              <div style={{ marginTop: '4px', fontSize: '12px' }}>
-                建議參數範例：
-                <pre className={styles.inlineCode}>{JSON.stringify(selectedTool.exampleArgs, null, 2)}</pre>
-              </div>
-            )}
-          </Alert>
-        )}
-
-        <Field
-          label="工具參數 (JSON 格式)"
-          description="所有欄位將直接送至 MCP 工具，請確保 JSON 結構有效且不包含敏感資訊。"
-        >
-          <TextArea
-            value={state.argumentText}
-            rows={16}
-            onChange={(event) => model.updateArgumentText(event.currentTarget.value)}
-            spellCheck={false}
-          />
-        </Field>
-
-        <HorizontalGroup spacing="sm">
-          <Button icon="play" onClick={() => model.executeSelectedTool()} disabled={executeDisabled}>
-            執行工具
-          </Button>
-          {state.loading && <Spinner inline={true} size={16} />}
-          {state.lastExecutedAt && (
-            <span className={styles.timestamp}>
-              最後執行時間：{new Date(state.lastExecutedAt).toLocaleString()}
-            </span>
+          {selectedTool && (
+            <Alert title="參數提示" severity="info">
+              <div>{selectedTool.parameterNote}</div>
+              {selectedTool.exampleArgs && (
+                <div className={styles.parameterExample}>
+                  建議參數範例：
+                  <pre className={styles.inlineCode}>{JSON.stringify(selectedTool.exampleArgs, null, 2)}</pre>
+                </div>
+              )}
+            </Alert>
           )}
-        </HorizontalGroup>
 
-        {state.connectionMessage && (
-          <Alert title="MCP 狀態" severity={state.connectionSeverity ?? 'info'}>
-            {state.connectionMessage}
-          </Alert>
-        )}
+          <Field
+            label="工具參數 (JSON 格式)"
+            description="所有欄位將直接送至 MCP 工具，請確保 JSON 結構有效且不包含敏感資訊。支援快捷鍵 Ctrl/Cmd + Enter 執行。"
+          >
+            <TextArea
+              value={state.argumentText}
+              rows={14}
+              onChange={(event) => model.updateArgumentText(event.currentTarget.value)}
+              onKeyDown={handleArgumentKeyDown}
+              spellCheck={false}
+            />
+          </Field>
 
-        {state.error && (
-          <Alert title="執行失敗" severity="error">
-            {state.error}
-          </Alert>
-        )}
+          <HorizontalGroup spacing="sm">
+            <Button icon="play" onClick={() => model.executeSelectedTool()} disabled={executeDisabled}>
+              執行工具
+            </Button>
+            {state.loading && <Spinner inline={true} size={16} />}
+            {state.lastExecutedAt && (
+              <span className={styles.timestamp}>
+                最後執行時間：{new Date(state.lastExecutedAt).toLocaleString()}
+              </span>
+            )}
+          </HorizontalGroup>
+        </div>
 
-        {state.rawResponse && !state.error && (
-          <div>
+        <div className={styles.rightPane}>
+          <div className={styles.statusSection}>{renderStatusAlerts()}</div>
+
+          <div className={styles.resultSection}>
             <div className={styles.resultHeader}>原始 JSON 結果</div>
-            <pre className={styles.resultBlock}>{state.rawResponse}</pre>
+            <div className={styles.resultBody}>
+              {state.loading && (
+                <div className={styles.loadingMask}>
+                  <Spinner inline={true} size={18} />
+                  <span>工具執行中…</span>
+                </div>
+              )}
+              {state.rawResponse && !state.error ? (
+                <pre className={styles.resultBlock}>{state.rawResponse}</pre>
+              ) : (
+                <div className={styles.placeholder}>尚未取得結果，請先選擇工具並執行。</div>
+              )}
+            </div>
           </div>
-        )}
-      </Stack>
+        </div>
+      </div>
     </div>
   );
 }
@@ -304,21 +329,83 @@ function getStyles() {
     container: css`
       display: flex;
       flex-direction: column;
+      width: 100%;
+      gap: 12px;
+    `,
+    content: css`
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
       gap: 16px;
+      align-items: start;
+
+      @media (max-width: 1280px) {
+        grid-template-columns: 1fr;
+      }
+    `,
+    leftPane: css`
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    `,
+    rightPane: css`
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 100%;
+    `,
+    statusSection: css`
+      min-height: 48px;
+    `,
+    resultSection: css`
+      background: var(--grafana-color-bg-strong);
+      border-radius: 6px;
+      border: 1px solid var(--grafana-color-border-strong);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
     `,
     resultHeader: css`
       font-weight: 600;
-      margin-bottom: 8px;
+      padding: 12px 16px 8px;
+      border-bottom: 1px solid var(--grafana-color-border-weak);
+    `,
+    resultBody: css`
+      position: relative;
+      flex: 1;
+      display: flex;
+      min-height: 240px;
+      padding: 12px 16px 16px;
+    `,
+    loadingMask: css`
+      position: absolute;
+      inset: 0;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      background: var(--grafana-color-bg-strong);
+      opacity: 0.92;
+      z-index: 1;
     `,
     resultBlock: css`
-      background: var(--grafana-color-bg-strong);
-      border-radius: 4px;
-      padding: 12px;
-      max-height: 420px;
+      flex: 1;
+      margin: 0;
+      padding: 4px 8px;
       overflow: auto;
       font-family: var(--grafana-font-family-monospace);
       font-size: 12px;
       line-height: 1.5;
+      white-space: pre;
+    `,
+    placeholder: css`
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      color: var(--grafana-color-text-secondary);
+      text-align: center;
     `,
     timestamp: css`
       font-size: 12px;
@@ -331,6 +418,11 @@ function getStyles() {
       display: inline-block;
       margin-top: 4px;
       font-family: var(--grafana-font-family-monospace);
+    `,
+    parameterExample: css`
+      margin-top: 4px;
+      font-size: 12px;
+      line-height: 1.6;
     `,
   };
 }
