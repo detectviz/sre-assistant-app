@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   AdHocFiltersVariable,
-  CustomVariable,
   DataSourceVariable,
   EmbeddedScene,
   PanelBuilders,
@@ -27,13 +26,12 @@ import {
   SceneTimeRange,
   SceneVariableSet,
   SplitLayout,
-  TextBoxVariable,
-  VariableValueSelectors,
+  VariableValueControl,
   VizPanel,
   behaviors,
   sceneUtils,
 } from '@grafana/scenes';
-import { DashboardCursorSync, DataSourceRef } from '@grafana/schema';
+import { DashboardCursorSync, DataSourceRef, VariableHide, VariableSort } from '@grafana/schema';
 import {
   DataFrame,
   DataQuery,
@@ -805,6 +803,7 @@ export function buildInteractivityScene(): EmbeddedScene {
     label: 'Prometheus 資料源',
     pluginId: 'prometheus',
     regex: '',
+    hide: VariableHide.hideVariable,
   });
 
   const jobVariable = new QueryVariable({
@@ -816,19 +815,19 @@ export function buildInteractivityScene(): EmbeddedScene {
       query: 'label_values(up, job)',
     },
     value: 'prometheus',
+    sort: VariableSort.alphabeticalAsc,
   });
 
-  const statusVariable = new CustomVariable({
-    name: 'statusFilter',
-    label: 'HTTP 狀態範圍',
-    query: '全部:.*,成功:2..*,重新導向:3..*,用戶錯誤:4..*,伺服器錯誤:5..*',
-    value: '.*',
-  });
-
-  const metricVariable = new TextBoxVariable({
+  const metricVariable = new QueryVariable({
     name: 'metricName',
     label: '指標名稱',
+    datasource: null,
+    query: {
+      refId: 'Metric',
+      query: 'label_values({job="$job"}, __name__)',
+    },
     value: 'prometheus_http_requests_total',
+    sort: VariableSort.alphabeticalAsc,
   });
 
   const adhocVariable = new AdHocFiltersVariable({
@@ -837,10 +836,11 @@ export function buildInteractivityScene(): EmbeddedScene {
     datasource: null,
     filters: [],
     applyMode: 'manual',
+    hide: VariableHide.hideVariable,
   });
 
   const variableSet = new SceneVariableSet({
-    variables: [dataSourceVariable, jobVariable, statusVariable, metricVariable, adhocVariable],
+    variables: [dataSourceVariable, jobVariable, metricVariable, adhocVariable],
   });
 
   const interactiveRunner = new SceneQueryRunner({
@@ -848,7 +848,7 @@ export function buildInteractivityScene(): EmbeddedScene {
     queries: [
       {
         refId: 'A',
-        expr: 'sum by (instance)(rate(${metricName:raw}{job=~"$job",code=~"$statusFilter",$Filters}[5m]))',
+        expr: 'sum by (instance)(rate(${metricName:raw}{job=~"$job",$Filters}[5m]))',
       },
     ],
     $timeRange: timeRange,
@@ -861,6 +861,8 @@ export function buildInteractivityScene(): EmbeddedScene {
       if (!ref || !ref.uid) {
         adhocVariable.setState({ datasource: null, filters: [] });
         jobVariable.setState({ datasource: null });
+        metricVariable.setState({ datasource: null });
+        interactiveRunner.setState({ datasource: undefined });
         interactiveRunner.cancelQuery();
         return;
       }
@@ -870,7 +872,10 @@ export function buildInteractivityScene(): EmbeddedScene {
       dataSourceVariable.changeValueTo(targetRef.uid, targetRef.uid, true);
       jobVariable.setState({ datasource: targetRef });
       jobVariable.refreshOptions();
+      metricVariable.setState({ datasource: targetRef });
+      metricVariable.refreshOptions();
       adhocVariable.setState({ datasource: targetRef, filters: [] });
+      interactiveRunner.setState({ datasource: targetRef });
       interactiveRunner.runQueries();
     },
   });
@@ -887,14 +892,14 @@ export function buildInteractivityScene(): EmbeddedScene {
           body: new DescriptionBlock({
             title: '變數、臨時篩選與 URL 同步',
             detail:
-              'SceneVariableSet 集中管理 DataSourceVariable、QueryVariable、CustomVariable、TextBoxVariable 與 AdHocFiltersVariable，搭配 URL 同步讓互動狀態可分享。',
+              'SceneVariableSet 集中管理 DataSourceVariable、QueryVariable 與 AdHocFiltersVariable，搭配 URL 同步讓互動狀態可分享。',
           }),
         }),
         createDescribedFlexItem({
           description: {
-            title: 'VariableValueSelectors 與動態查詢',
+            title: 'VariableValueControl 與動態查詢',
             detail:
-              'VariableValueSelectors 在控制列呈現變數介面，PanelBuilders.timeseries 使用插值語法引用使用者選項並即時更新查詢結果。',
+              '透過 VariableValueControl 精確控制變數呈現順序，PanelBuilders.timeseries 使用插值語法引用使用者選項並即時更新查詢結果。',
           },
           content: PanelBuilders.timeseries().setTitle('互動查詢結果').build(),
           minHeight: 340,
@@ -903,7 +908,9 @@ export function buildInteractivityScene(): EmbeddedScene {
     }),
     controls: [
       datasourceSelector,
-      new VariableValueSelectors({}),
+      new VariableValueControl({ variableName: 'job' }),
+      new VariableValueControl({ variableName: 'metricName' }),
+      new VariableValueControl({ variableName: 'Filters' }),
       new SceneControlsSpacer(),
       new SceneTimePicker({ isOnCanvas: true }),
     ],
