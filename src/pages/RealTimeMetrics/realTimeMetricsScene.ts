@@ -11,7 +11,7 @@ import {
   SceneTimePicker,
   SceneTimeRange,
 } from '@grafana/scenes';
-import { DataSourceSelectControl } from '../../components/DataSourceControls/DataSourceSelectControl';
+import { MllmChat, type MllmClient } from '@grafana/llm';
 
 interface PrometheusRangeQuery extends DataQuery {
   expr: string;
@@ -20,7 +20,7 @@ interface PrometheusRangeQuery extends DataQuery {
   range?: boolean;
 }
 
-export const realTimeMetricsScene = () => {
+export const realTimeMetricsScene = (mllm: MllmClient) => {
   const timeRange = new SceneTimeRange({
     from: 'now-1h',
     to: 'now',
@@ -35,23 +35,7 @@ export const realTimeMetricsScene = () => {
     pluginId: 'prometheus',
     label: 'Prometheus',
     onChange: (ref: DataSourceRef | null) => {
-      if (!ref) {
-        queryRunner.cancelQuery();
-        queryRunner.setState({ datasource: undefined, queries: [] });
-        return;
-      }
-
-      const query: PrometheusRangeQuery = {
-        refId: 'A',
-        datasource: ref,
-        expr: 'sum(rate(prometheus_http_requests_total[5m])) by (code)',
-        legendFormat: 'HTTP {{code}}',
-        range: true,
-        instant: false,
-      };
-
-      queryRunner.setState({ datasource: ref, queries: [query] });
-      queryRunner.runQueries();
+      queryRunner.setState({ datasource: ref || undefined });
     },
   });
 
@@ -73,8 +57,36 @@ export const realTimeMetricsScene = () => {
     }),
     controls: [
       datasourceSelector,
-      new SceneTimePicker({ isOnCanvas: true }),
+      new MllmChat({
+        title: 'Prometheus 指標查詢助理',
+        onSend: async (message: string) => {
+          const timeRangeValue = timeRange.state.value;
+          const contextMessage = `Grafana time range is: from=${timeRangeValue.from}, to=${timeRangeValue.to}.`;
+          const fullMessage = `${contextMessage}\n\nUser query: ${message}`;
+
+          const response = await mllm.llm.chat({
+            messages: [{ role: 'user', content: fullMessage }],
+            tools: [{ type: 'prometheus:query' }],
+          });
+
+          const toolCall = response.choices[0].message.tool_calls?.[0];
+          if (toolCall?.function.name !== 'prometheus:query') {
+            return;
+          }
+
+          const args = JSON.parse(toolCall.function.arguments);
+          const query: PrometheusRangeQuery = {
+            refId: 'A',
+            expr: args.expr,
+            range: true,
+          };
+
+          queryRunner.setState({ queries: [query] });
+          queryRunner.runQueries();
+        },
+      }),
       new SceneControlsSpacer(),
+      new SceneTimePicker({ isOnCanvas: true }),
       new SceneRefreshPicker({
         intervals: ['5s', '30s', '1m'],
         isOnCanvas: true,

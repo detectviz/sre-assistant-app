@@ -1,12 +1,21 @@
 import { SceneAppPage } from '@grafana/scenes';
+import { MllmClient } from '@grafana/llm';
 import { ROUTES } from '../../constants';
 import { prefixRoute } from '../../utils/utils.routing';
 import { logAnalysisScene } from './logAnalysisScene';
 
-export const logAnalysisPage = new SceneAppPage({
-  title: '日誌分析',
-  subTitle: '以 LogQL 鎖定錯誤訊息並協助快速排除。',
-  url: prefixRoute(ROUTES.LogAnalysis),
-  routePath: ROUTES.LogAnalysis,
-  getScene: logAnalysisScene,
-});
+const getPage = () => {
+  const mllm = new MllmClient({
+    appUrl: '/a/grafana-llm-app',
+  });
+
+  return new SceneAppPage({
+    title: '日誌分析',
+    subTitle: '以 LogQL 鎖定錯誤訊息並協助快速排除。',
+    url: prefixRoute(ROUTES.LogAnalysis),
+    routePath: ROUTES.LogAnalysis,
+    getScene: () => logAnalysisScene(mllm),
+  });
+};
+
+export const logAnalysisPage = getPage();

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "app",
+  "name": "Notification History",
+  "id": "sre-notification-history-plugin",
+
+  "backend": true,
+  "executable": "gpx_notification_history",
+
+  "info": {
+    "description": "A Grafana App Plugin to provide a persistent, searchable history for all alert notifications.",
+    "author": {
+      "name": "SRE Team"
+    },
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "version": "1.0.0",
+    "updated": "%TODAY%"
+  },
+
+  "includes": [
+    {
+      "type": "page",
+      "name": "Notification History",
+      "path": "/a/sre-notification-history-plugin",
+      "defaultNav": true
+    }
+  ],
+
+  "dependencies": {
+    "grafanaDependency": ">=11.2.0",
+    "plugins": []
+  },
+  "iam": {
+    "permissions": []
+  }
+}
