@@ -20,6 +20,9 @@ services:
       - SYS_PTRACE
     volumes:
       - ../dist:/var/lib/grafana/plugins/sre-assistant-app
+      - ../sre-silence-rules-plugin/dist:/var/lib/grafana/plugins/sre-silence-rules-plugin
+      - ../sre-tag-governance-plugin/dist:/var/lib/grafana/plugins/sre-tag-governance-plugin
+      - ../sre-notification-history-plugin/dist:/var/lib/grafana/plugins/sre-notification-history-plugin
       - ../provisioning:/etc/grafana/provisioning
       - ..:/root/sre-assistant-app
 
@@ -28,4 +31,4 @@ services:
       GF_LOG_FILTERS: plugin.sre-assistant-app:debug
       GF_LOG_LEVEL: debug
       GF_DATAPROXY_LOGGING: 1
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: sre-assistant-app
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: sre-assistant-app,sre-silence-rules-plugin,sre-tag-governance-plugin,sre-notification-history-plugin

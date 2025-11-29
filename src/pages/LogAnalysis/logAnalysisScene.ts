@@ -11,7 +11,7 @@ import {
   SceneTimePicker,
   SceneTimeRange,
 } from '@grafana/scenes';
-import { DataSourceSelectControl } from '../../components/DataSourceControls/DataSourceSelectControl';
+import { MllmChat, type MllmClient } from '@grafana/llm';
 
 interface LokiRangeQuery extends DataQuery {
   expr: string;
@@ -19,7 +19,7 @@ interface LokiRangeQuery extends DataQuery {
   maxLines?: number;
 }
 
-export const logAnalysisScene = () => {
+export const logAnalysisScene = (mllm: MllmClient) => {
   const timeRange = new SceneTimeRange({
     from: 'now-30m',
     to: 'now',
@@ -33,22 +33,7 @@ export const logAnalysisScene = () => {
     pluginId: 'loki',
     label: 'Loki',
     onChange: (ref: DataSourceRef | null) => {
-      if (!ref) {
-        queryRunner.cancelQuery();
-        queryRunner.setState({ datasource: undefined, queries: [] });
-        return;
-      }
-
-      const query: LokiRangeQuery = {
-        refId: 'A',
-        datasource: ref,
-        expr: '{job="grafana"} |= "error"',
-        queryType: 'range',
-        maxLines: 1000,
-      };
-
-      queryRunner.setState({ datasource: ref, queries: [query] });
-      queryRunner.runQueries();
+      queryRunner.setState({ datasource: ref || undefined });
     },
   });
 
@@ -71,8 +56,36 @@ export const logAnalysisScene = () => {
     }),
     controls: [
       datasourceSelector,
-      new SceneTimePicker({ isOnCanvas: true }),
+      new MllmChat({
+        title: 'Loki 日誌查詢助理',
+        onSend: async (message: string) => {
+          const timeRangeValue = timeRange.state.value;
+          const contextMessage = `Grafana time range is: from=${timeRangeValue.from}, to=${timeRangeValue.to}.`;
+          const fullMessage = `${contextMessage}\n\nUser query: ${message}`;
+
+          const response = await mllm.llm.chat({
+            messages: [{ role: 'user', content: fullMessage }],
+            tools: [{ type: 'loki:query' }],
+          });
+
+          const toolCall = response.choices[0].message.tool_calls?.[0];
+          if (toolCall?.function.name !== 'loki:query') {
+            return;
+          }
+
+          const args = JSON.parse(toolCall.function.arguments);
+          const query: LokiRangeQuery = {
+            refId: 'A',
+            expr: args.expr,
+            queryType: 'range',
+          };
+
+          queryRunner.setState({ queries: [query] });
+          queryRunner.runQueries();
+        },
+      }),
       new SceneControlsSpacer(),
+      new SceneTimePicker({ isOnCanvas: true }),
       new SceneRefreshPicker({
         intervals: ['10s', '1m', '5m'],
         isOnCanvas: true,

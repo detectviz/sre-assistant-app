@@ -1,0 +1,48 @@
+{
+  "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
+  "type": "app",
+  "name": "Silence Rules",
+  "id": "sre-silence-rules-plugin",
+
+  "backend": true,
+  "executable": "gpx_silence_rules",
+
+  "info": {
+    "description": "A Grafana App Plugin to manage recurring alert silence rules.",
+    "author": {
+      "name": "SRE Team"
+    },
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.svg"
+    },
+    "version": "1.0.0",
+    "updated": "%TODAY%"
+  },
+
+  "includes": [
+    {
+      "type": "page",
+      "name": "Silence Rules",
+      "path": "/a/sre-silence-rules-plugin",
+      "defaultNav": true
+    }
+  ],
+
+  "dependencies": {
+    "grafanaDependency": ">=11.2.0",
+    "plugins": []
+  },
+  "iam": {
+    "permissions": [
+      {
+        "action": "alerting.silences:create",
+        "scope": "datasources:*"
+      },
+      {
+        "action": "alerting.silences:read",
+        "scope": "datasources:*"
+      }
+    ]
+  }
+}
