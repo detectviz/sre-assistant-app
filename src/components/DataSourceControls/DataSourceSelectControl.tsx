@@ -1,11 +1,9 @@
 import React from 'react';
 import { css } from '@emotion/css';
 import { Select } from '@grafana/ui';
-import type { SelectableValue } from '@grafana/data';
-import type { DataSourceInstanceSettings } from '@grafana/data';
+import type { SelectableValue, DataSourceInstanceSettings } from '@grafana/data';
 import type { DataSourceRef } from '@grafana/schema';
-import type { SceneComponentProps, SceneObjectState } from '@grafana/scenes';
-import { SceneObjectBase } from '@grafana/scenes';
+import { SceneObjectBase, type SceneComponentProps, type SceneObjectState } from '@grafana/scenes';
 import { getDataSourceSrv } from '@grafana/runtime';
 
 /**
