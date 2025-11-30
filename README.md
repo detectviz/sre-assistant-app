@@ -1,119 +1,128 @@
-# SRE Assistant APP Plugin 架構說明
+# SRE Assistant App (SRE 智慧助理插件)
 
-## 1. 總覽
+> **Grafana 生態中最頂尖的 AI 驅動可觀察性助理**
 
-**SRE Assistant APP Plugin** 是一個基於 Grafana 的 **App Plugin**，提供 AI 協助的可觀察性、事件智慧診斷與自動化功能。
+## 1. 專案總覽
+
+**SRE Assistant App** 是一個深度整合 Grafana 生態的智慧運維助理。它結合了大型語言模型 (LLM) 的推理能力與 Grafana 的可觀察性數據，旨在協助 SRE 團隊快速診斷問題、分析日誌與指標，並最終實現自動化的故障應對。
 
 ### 核心特色
-- **前端驅動**: 前端直接透過 `@grafana/llm` 呼叫 LLM 和 MCP 工具
-- **無後端邏輯**: 初期版本避免複雜的後端 API 調用，專注於前端體驗
-- **漸進式擴充**: 待功能穩定後，再逐步添加後端邏輯和 API 整合
-
-### 架構原則
-- **簡潔優先**: 避免過度複雜的架構設計
-- **前端主導**: 將主要邏輯放在前端，減少網路往返
-- **可擴充性**: 保留後端擴充的空間，但初期不實現
+*   **自然語言查詢**: 透過對話介面，直接查詢 Prometheus 指標與 Loki 日誌，無需記憶複雜的 PromQL/LogQL 語法。
+*   **上下文感知**: AI 能自動感知當前的時間範圍 (Time Range) 與資料源 (Data Source)，提供精準的查詢建議。
+*   **MCP 工具整合**: 採用 Model Context Protocol (MCP) 標準，前端與後端皆可靈活調用 Grafana 生態中的各種工具 (如 `prometheus:query`, `loki:query`)。
+*   **混合架構**:
+    *   **Frontend**: 基於 `@grafana/scenes` 構建互動式 UI，並透過 `@grafana/llm` 處理 AI 對話。
+    *   **Backend**: 使用 Go 語言與 `google.golang.org/adk` 框架，提供更強大的代理 (Agent) 能力與數據持久化 (開發中)。
 
 ---
 
-## 2. 核心組件
+## 2. 系統架構
 
-| 組件 | 技術棧 | 責任範圍 | 說明 |
-|------|--------|----------|------|
-| **前端介面** | React + TypeScript + Grafana Scenes SDK | 使用者互動、AI 對話、結果展示 | 提供直觀的 AI 助手介面，直接呼叫 LLM 和 MCP 工具 |
-| **LLM 整合** | `@grafana/llm` | AI 推理、工具調用、自然語言處理 | 前端直接與 Grafana LLM App 通信，處理工具調用邏輯 |
-| **MCP 工具** | Grafana MCP Server | 數據查詢、系統操作 | 提供 50+ 種 Grafana 生態工具，前端可直接調用 |
-| **Grafana 平台** | Grafana App Plugin | 插件容器、權限管理、安全性 | 提供插件運行環境和統一的認證授權 |
+本插件採用前後端分離的混合架構，確保互動的即時性與後端處理的穩定性。
 
----
-
-## 3. 前端資料互動流程
-
-### 當前實現（前端驅動）
-| 步驟 | 說明 | 技術實現 |
-|------|------|----------|
-| **1** | 使用者與 Scene 頁面互動 | React 組件處理使用者輸入和選擇 |
-| **2** | 前端直接呼叫 `@grafana/llm` | 使用 `llm.chatCompletions()` 和 MCP 客戶端 |
-| **3** | LLM 處理工具調用邏輯 | AI 決定是否需要調用 MCP 工具 |
-| **4** | MCP 工具執行查詢 | 直接訪問 Grafana 資料源和 API |
-| **5** | 結果渲染展示 | 使用 Scenes SDK 展示 AI 回應和數據 |
-
-### 設計優勢
-- **減少網路往返**: 前端直接呼叫，避免後端中間層
-- **即時回應**: AI 推理和工具調用都在前端完成
-- **簡化架構**: 不需要複雜的後端 API 設計
-- **快速迭代**: 前端修改即可調整功能邏輯
+| 層級 | 技術棧 | 職責 |
+| :--- | :--- | :--- |
+| **Frontend** | React, TypeScript, Grafana Scenes SDK | 負責 UI 呈現、使用者互動、以及透過 `@grafana/llm` 發起輕量級的 AI 請求。 |
+| **Backend** | Go, Grafana Plugin SDK, Google ADK | 負責複雜的 Agent 邏輯、狀態管理、與 MCP Server 的通訊，以及未來的數據持久化。 |
+| **AI/LLM** | `@grafana/llm`, Google Gemini (via ADK) | 提供自然語言理解與推理能力。 |
+| **Tools** | MCP (Model Context Protocol) | 標準化的工具介面，連接 Prometheus, Loki, Alerting 等 Grafana 資料源。 |
 
 ---
 
-## 4. 安全性與權限
+## 3. 快速開始 (Getting Started)
 
-### 當前實現（前端驅動）
-| 安全層面 | 實現方式 | 說明 |
-|----------|----------|------|
-| **認證** | Grafana 內建認證 | 使用者通過 Grafana 登入，自動繼承權限 |
-| **授權** | RBAC 模型 | 基於使用者角色控制工具存取權限 |
-| **數據隔離** | Org/Folder 級別 | 使用者只能訪問授權的組織和文件夾數據 |
-| **工具權限** | MCP 服務器控制 | 根據使用者權限動態過濾可用工具 |
-| **審計日誌** | 前端行為記錄 | 記錄所有 AI 互動和工具調用 |
+### 前置需求
+*   **Grafana**: v10.0+ (建議 v11.0+)
+*   **Grafana LLM App**: 需安裝並啟用 `grafana-llm-app` 插件，以提供基礎的 LLM 服務。
+*   **Gemini API Key**: 用於後端 Agent 的推理服務。
 
-### 未來擴充（後端邏輯）
-- **Metrics 收集**: 後端輸出插件指標（查詢次數、延遲、錯誤率）
-- **Audit Logging**: 自動化與分析行為以 Annotation 記錄
-- **Secure JSON**: 機密資訊透過 Grafana 安全設定儲存
+### 安裝與開發
+1.  **Clone 專案**:
+    ```bash
+    git clone https://github.com/sre/assistant.git
+    cd assistant
+    ```
 
----
+2.  **安裝前端依賴**:
+    ```bash
+    npm install
+    ```
 
-## 6. 開發與部署
+3.  **啟動開發環境**:
+    使用 Docker Compose 啟動包含 Grafana 與插件的完整環境。
+    ```bash
+    npm run server
+    ```
+    *Grafana 將於 `http://localhost:3000` 啟動。*
 
-### 環境需求
-- **Grafana**: 9.0+ （建議 10.0+）
-- **Node.js**: 18+
-- **Go**: 1.21+ （後端擴充時需要）
+4.  **前端熱更新 (Optional)**:
+    若需即時預覽前端修改，可開啟另一個終端機執行：
+    ```bash
+    npm run dev
+    ```
 
-### 建置流程
-```bash
-# 安裝依賴
-npm install
-
-# 前端建置
-npm run build
-```
-
-### 測試策略
-- **單元測試**: React 組件和工具函數
-- **整合測試**: LLM 和 MCP 工具調用
-- **端到端測試**: 完整使用者流程
+### 配置說明
+進入 Grafana -> **Administration** -> **Plugins** -> **SRE Assistant App** -> **Configuration**：
+1.  輸入 `Gemini API Key`。
+2.  (選填) 設定 `MCP Endpoint` (預設為 `http://localhost:8000/sse`)。
 
 ---
 
-## 7. 未來擴充規劃
+## 4. 開發藍圖 (Roadmap)
 
-### 階段一：前端功能完善（當前焦點）
-- ✅ AI 對話介面優化
-- ✅ MCP 工具深度整合
-- ✅ 使用者體驗改進
-- ✅ 錯誤處理和重試機制
+本專案遵循分階段演進策略，目標是從單純的查詢助理進化為全功能的 SRE 自動化代理。
 
-### 階段二：後端邏輯引入（穩定後）
-- 🔄 自訂 Resource API 實現
-- 🔄 複雜業務邏輯處理
-- 🔄 數據聚合和快取
-- 🔄 背景任務處理
-- 🔄 Metrics 和 Audit Logging
+### Phase 1: MVP - AI 賦能的查詢助理 (2025 Q4)
+> **核心目標**: 實現從「手動查詢」到「自然語言查詢」的轉變。
 
-### 階段三：進階功能（長期）
-- 🔄 多模型支援（Ollama、Gemini、Vertex）
-- 🔄 自訂 MCP 工具開發
-- 🔄 Kubernetes 上下文整合
-- 🔄 自動化 Playbook 執行
+| 狀態 | 優先級 | 任務 |
+| :--: | :---: | :--- |
+| ⏳ | **P0** | **整合 `@grafana/llm`**: 實作對話式 UI，支援自然語言查詢指標與日誌。 |
+| ⏳ | **P0** | **前端 MCP 工具調用**: 透過 LLM 呼叫 `prometheus:query` 和 `loki:query`。 |
+| ⏳ | **P1** | **上下文感知**: 讓 AI 理解當前 Time Range 與 Data Source。 |
+| ⏳ | **P1** | **對話歷史**: 前端 Session 級別的對話紀錄。 |
+| ✅ | **P2** | **基礎 UI 框架**: 基於 Grafana Scenes SDK 搭建核心頁面。 |
+
+### Phase 2: 後端賦能與體驗增強 (2026 Q1)
+> **核心目標**: 啟用 Go 後端，提供持久化記憶與更穩定的體驗。
+
+| 狀態 | 優先級 | 任務 |
+| :--: | :---: | :--- |
+| ⏳ | **P0** | **對話歷史持久化**: 使用資料庫儲存對話，支援跨 Session 追溯。 |
+| ⏳ | **P1** | **使用者偏好設定**: 記住使用者的常用資料源與 Dashboard。 |
+| ⏳ | **P1** | **遙測與監控**: 插件自我監控 (Metrics)。 |
+| ⏳ | **P2** | **安全與密鑰管理**: 整合 Secure JSON Data。 |
+| ⏳ | **P2** | **建立後端 Resource API**: 提供 RESTful API 供前端存取。 |
+
+### Phase 3: 邁向智能自動化 (2026 Q2)
+> **核心目標**: 升級為「SRE 代理」，執行複雜分析與應對。
+
+| 狀態 | 優先級 | 任務 |
+| :--: | :---: | :--- |
+| ⏳ | **P0** | **告警分析能力**: AI 自動分析告警根因 (Root Cause Analysis)。 |
+| ⏳ | **P1** | **Runbook 整合**: 依指令執行標準化 SOP。 |
+| ⏳ | **P1** | **自訂 MCP 工具**: 開發專屬工具 (如 `create-annotation`)。 |
+| ⏳ | **P2** | **主動式異常偵測**: 實驗性功能，自動識別圖表異常。 |
+
+### Phase 4: 生態整合與自我完善 (2026 H2)
+> **核心目標**: 與外部生態深度整合，具備自我學習能力。
+
+| 狀態 | 優先級 | 任務 |
+| :--: | :---: | :--- |
+| ⏳ | **P1** | **事件管理整合**: 整合 Jira/ServiceNow，一鍵開單。 |
+| ⏳ | **P1** | **使用者回饋機制**: 收集 RLAIF 數據優化模型。 |
+| ⏳ | **P2** | **知識庫整合 (RAG)**: 檢索企業內部維運文檔。 |
+| ⏳ | **P2** | **多 LLM 支援**: 支援 OpenAI, Anthropic, Ollama 等多種後端。 |
 
 ---
 
-## 8. 參考資源
+## 5. 貢獻指南
 
-- [Grafana Plugin Development](https://grafana.com/developers/plugin-tools/)
-- [Scenes SDK Documentation](https://grafana.com/developers/scenes/)
-- [@grafana/llm Package](https://www.npmjs.com/package/@grafana/llm)
-- [Grafana LLM App](https://github.com/grafana/grafana-llm-app)
-- [Grafana MCP Grafana Server](https://github.com/grafana/mcp-grafana)
+歡迎參與 SRE Assistant App 的開發！請遵循以下原則：
+*   **遵守憲法**: 所有開發需符合 `.specify/memory/constitution.md` 中的規範。
+*   **測試驅動**: 新功能需包含單元測試與 E2E 測試。
+*   **程式碼品質**: 提交前請執行 `npm run lint` 與 `npm run typecheck`。
+
+---
+
+*文件更新日期: 2025-10-14*

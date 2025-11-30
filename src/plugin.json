@@ -1,15 +1,20 @@
 {
   "$schema": "https://raw.githubusercontent.com/grafana/grafana/main/docs/sources/developers/plugins/plugin.schema.json",
   "type": "app",
-  "name": "Assistant",
+  "name": "SRE Assistant",
   "id": "sre-assistant-app",
   "backend": true,
   "executable": "gpx_assistant",
   "info": {
     "keywords": [
-      "app"
+      "app",
+      "sre",
+      "ai",
+      "llm",
+      "assistant",
+      "observability"
     ],
-    "description": "",
+    "description": "Grafana 生態中最頂尖的 AI 驅動可觀察性助理，協助 SRE 團隊進行故障排除與自動化分析。",
     "author": {
       "name": "Sre"
     },

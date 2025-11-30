@@ -12,6 +12,7 @@ import {
   SceneTimeRange,
 } from '@grafana/scenes';
 import { MllmChat, type MllmClient } from '@grafana/llm';
+import { DataSourceSelectControl } from '../../components/DataSourceControls/DataSourceSelectControl';
 
 interface LokiRangeQuery extends DataQuery {
   expr: string;
