@@ -1,4 +1,3 @@
-import type { DataQuery } from '@grafana/data';
 import type { DataSourceRef } from '@grafana/schema';
 import {
   EmbeddedScene,
@@ -13,12 +12,7 @@ import {
 } from '@grafana/scenes';
 import { MllmChat, type MllmClient } from '@grafana/llm';
 import { DataSourceSelectControl } from '../../components/DataSourceControls/DataSourceSelectControl';
-
-interface LokiRangeQuery extends DataQuery {
-  expr: string;
-  queryType?: 'range' | 'instant';
-  maxLines?: number;
-}
+import { handleLokiChat } from './actions';
 
 export const logAnalysisScene = (mllm: MllmClient) => {
   const timeRange = new SceneTimeRange({
@@ -61,28 +55,12 @@ export const logAnalysisScene = (mllm: MllmClient) => {
         title: 'Loki 日誌查詢助理',
         onSend: async (message: string) => {
           const timeRangeValue = timeRange.state.value;
-          const contextMessage = `Grafana time range is: from=${timeRangeValue.from}, to=${timeRangeValue.to}.`;
-          const fullMessage = `${contextMessage}\n\nUser query: ${message}`;
-
-          const response = await mllm.llm.chat({
-            messages: [{ role: 'user', content: fullMessage }],
-            tools: [{ type: 'loki:query' }],
-          });
-
-          const toolCall = response.choices[0].message.tool_calls?.[0];
-          if (toolCall?.function.name !== 'loki:query') {
-            return;
-          }
-
-          const args = JSON.parse(toolCall.function.arguments);
-          const query: LokiRangeQuery = {
-            refId: 'A',
-            expr: args.expr,
-            queryType: 'range',
-          };
-
-          queryRunner.setState({ queries: [query] });
-          queryRunner.runQueries();
+          await handleLokiChat(
+            message,
+            mllm,
+            queryRunner,
+            { from: timeRangeValue.from.toString(), to: timeRangeValue.to.toString() }
+          );
         },
       }),
       new SceneControlsSpacer(),
